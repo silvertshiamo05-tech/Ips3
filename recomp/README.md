@@ -38,8 +38,11 @@ What it took beyond the missing instructions, all in the patch or the tools:
 
 Not yet checked: that the generated code *runs* correctly. That needs the runtime below.
 
-Next: locate setjmp/longjmp, then the runtime (Xbox 360 kernel/XAM calls, memory, threads, file
-system) and the Xenos -> Metal renderer.
+`setjmp`/`longjmp` are located (`sub_8258D7B0`/`sub_8258D150`, matched by their register-buffer
+layout) and redirected to native versions: 10 and 21 call sites.
+
+Next: the runtime -- the 185 imported kernel/XAM functions listed in `bayonetta/IMPORTS.md`
+(memory, threads, files, input first) -- and then the Xenos -> Metal renderer.
 
 ## Tools
 

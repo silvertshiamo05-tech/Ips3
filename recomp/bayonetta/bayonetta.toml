@@ -26,4 +26,8 @@ savevmx_14_address = 0x8258AEC0
 restvmx_64_address = 0x8258B1EC
 savevmx_64_address = 0x8258AF54
 
-# TODO: setjmp/longjmp, once located (callers of RtlUnwind).
+# longjmp: the one function that restores f14-f31 (0..136), r13-r31 (152..296) and VMX state from
+# the buffer in r3, unwinding through RtlUnwind first. setjmp: the only function that stores
+# that same layout.
+longjmp_address = 0x8258D150
+setjmp_address = 0x8258D7B0
