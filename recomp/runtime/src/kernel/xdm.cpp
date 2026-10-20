@@ -45,3 +45,9 @@ void ips3::TraceCall(const char* name, const PPCContext& ctx, bool after)
     else
         fmt::println(stderr, "[trace {:5}] {}({:08X}, {:08X}, {:08X}, {:08X}) lr={:08X}", GuestThread::GetCurrentThreadId(), name, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, uint32_t(ctx.lr));
 }
+
+void PPCUnresolvedCall(uint32_t target, uint32_t lr)
+{
+    fmt::println(stderr, "[cpu] indirect call to {:08X} (from near {:08X}): no recompiled function there", target, lr);
+    std::abort();
+}

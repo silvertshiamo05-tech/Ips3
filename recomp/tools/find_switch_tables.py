@@ -5,7 +5,7 @@ switch-table TOML format.
 XenonAnalyse matches a handful of fixed instruction sequences (the ones Sonic Unleashed's
 compiler emits) and misses tables whose instructions are scheduled in a different order.
 This finds every `bctr`, walks back to the bounds check that guards it
-(`cmplwi rIdx, N` + `bgt default`), and then *executes* the instructions between the check
+(`cmplwi rIdx, N` + `bgt default`, or `bgtlr` when the default case returns), and then *executes* the instructions between the check
 and the `bctr` once per case value. Whatever ends up in CTR is that case's target. That
 covers absolute tables, byte/halfword offset tables and any instruction order, without
 knowing the compiler's patterns.
@@ -97,6 +97,16 @@ def decode_bc_gt(w, addr):
     bo, bi = (w >> 21) & 31, (w >> 16) & 31
     if (bo & 0b11100) == 0b01100 and bi % 4 == 1 and not w & 3:
         return bi // 4, (addr + sext16(w & 0xFFFC)) & MASK
+    return None
+
+
+def decode_bclr_gt(w):
+    """bgtlr crN (bclr, BO=12, BI=crN*4+1, no link): the default case returns. Returns (cr, 0)."""
+    if w >> 26 != 19 or (w >> 1) & 0x3FF != 16 or w & 1:
+        return None
+    bo, bi = (w >> 21) & 31, (w >> 16) & 31
+    if (bo & 0b11100) == 0b01100 and bi % 4 == 1:
+        return bi // 4, 0
     return None
 
 
@@ -221,7 +231,7 @@ def find_tables(img, max_back=24, max_cases=8192):
             w = img.word(a)
             if is_bctr(w) or w == 0x4E800020 or (w >> 26 == 18):  # previous bctr/blr/b: left the block
                 break
-            b = decode_bc_gt(w, a)
+            b = decode_bc_gt(w, a) or decode_bclr_gt(w)
             if b:
                 bgt = (a, b)
             c = decode_cmplwi(w)

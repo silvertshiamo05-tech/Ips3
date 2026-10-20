@@ -12,7 +12,9 @@ extern const uint32_t VIRTUAL_MEMORY_BEGIN;
 void Heap::Init()
 {
     heap = o1heapInit(g_memory.Translate(0x20000), VIRTUAL_MEMORY_BEGIN - 0x20000);
-    physicalHeap = o1heapInit(g_memory.Translate(RESERVED_END), 0x100000000 - RESERVED_END);
+    // Ips3: physical memory is 512 MiB, as on the console, so a GPU (physical) address is the
+    // low 29 bits of its guest address and maps back with 0xA0000000 | address.
+    physicalHeap = o1heapInit(g_memory.Translate(RESERVED_END), 0x20000000);
 }
 
 void* Heap::Alloc(size_t size)

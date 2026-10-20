@@ -75,7 +75,15 @@ Added on top of UnleashedRecomp:
 - Thread fixes: closing a thread handle no longer joins the thread (it deadlocked), suspending
   another thread no longer suspends the caller.
 
-Next: the Xenos -> Metal renderer (`Vd*` and the GPU command stream), XMA audio, input.
+- `gpu/command_processor.cpp`, `kernel/video.cpp`: a headless Xenos command processor. It
+  reads the PM4 ring buffer Direct3D fills (the register window at `0x7FC80000` is plain
+  memory, so it watches `CP_RB_WPTR` there), keeps the register file, executes indirect
+  buffers, waits, memory and scratch-register writes, fences and interrupts, writes the read
+  pointer back, and raises the 60 Hz vblank interrupt into the game's handler on its own
+  guest stack. Draw packets are counted, not drawn. Physical memory is the 512 MiB at
+  `0xA0000000`, so GPU addresses map back with `0xA0000000 | address`.
+
+Next: drawing (Xenos shaders and draws -> Metal), XMA audio, input.
 
 ## Tools
 

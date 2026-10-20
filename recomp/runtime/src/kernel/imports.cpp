@@ -683,17 +683,7 @@ bool VdPersistDisplay(uint32_t a1, uint32_t* a2)
     return false;
 }
 
-uint32_t VdSwap()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
-uint32_t VdGetSystemCommandBuffer()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
 void KeReleaseSpinLockFromRaisedIrql(uint32_t* spinLock)
 {
@@ -720,29 +710,15 @@ uint32_t KiApcNormalRoutineNop()
     return 0;
 }
 
-uint32_t VdEnableRingBufferRPtrWriteBack()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
-uint32_t VdInitializeRingBuffer()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
 uint32_t MmGetPhysicalAddress(uint32_t address)
 {
-    LOGF_UTILITY("0x{:x}", address);
-    return address;
+    // Ips3: physical memory is the 512 MiB at 0xA0000000 (see Heap::Init); GPU addresses are
+    // its low 29 bits.
+    return address & 0x1FFFFFFF;
 }
 
-uint32_t VdSetSystemCommandBufferGpuIdentifierAddress()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
 uint32_t _vsnprintf_x()
 {
@@ -757,11 +733,6 @@ uint32_t sprintf_x()
 }
 
 
-uint32_t VdShutdownEngines()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
 void VdQueryVideoMode(XVIDEO_MODE* vm)
 {
@@ -777,59 +748,14 @@ void VdQueryVideoMode(XVIDEO_MODE* vm)
     vm->Unknown01 = 0x01;
 }
 
-uint32_t VdGetCurrentDisplayInformation()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
-uint32_t VdSetDisplayMode()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
-uint32_t VdSetGraphicsInterruptCallback()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
-uint32_t VdInitializeEngines()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
-uint32_t VdIsHSIOTrainingSucceeded()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
-uint32_t VdGetCurrentDisplayGamma()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
-uint32_t VdQueryVideoFlags()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
-uint32_t VdCallGraphicsNotificationRoutines()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
-uint32_t VdInitializeScalerCommandBuffer()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
 
 uint32_t VdRetrainEDRAM()
@@ -837,11 +763,6 @@ uint32_t VdRetrainEDRAM()
     return 0;
 }
 
-uint32_t VdRetrainEDRAMWorker()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
 
 uint32_t MmAllocatePhysicalMemoryEx
@@ -865,11 +786,6 @@ uint32_t MmQueryAddressProtect(uint32_t guestAddress)
     return PAGE_READWRITE;
 }
 
-uint32_t VdEnableDisableClockGating()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
 void KeBugCheck()
 {
@@ -1526,31 +1442,14 @@ GUEST_FUNCTION_HOOK(__imp__KfAcquireSpinLock, KfAcquireSpinLock);
 GUEST_FUNCTION_HOOK(__imp__KeQueryPerformanceFrequency, KeQueryPerformanceFrequency);
 GUEST_FUNCTION_HOOK(__imp__MmFreePhysicalMemory, MmFreePhysicalMemory);
 GUEST_FUNCTION_HOOK(__imp__VdPersistDisplay, VdPersistDisplay);
-GUEST_FUNCTION_HOOK(__imp__VdSwap, VdSwap);
-GUEST_FUNCTION_HOOK(__imp__VdGetSystemCommandBuffer, VdGetSystemCommandBuffer);
 GUEST_FUNCTION_HOOK(__imp__KeReleaseSpinLockFromRaisedIrql, KeReleaseSpinLockFromRaisedIrql);
 GUEST_FUNCTION_HOOK(__imp__KeAcquireSpinLockAtRaisedIrql, KeAcquireSpinLockAtRaisedIrql);
 GUEST_FUNCTION_HOOK(__imp__KiApcNormalRoutineNop, KiApcNormalRoutineNop);
-GUEST_FUNCTION_HOOK(__imp__VdEnableRingBufferRPtrWriteBack, VdEnableRingBufferRPtrWriteBack);
-GUEST_FUNCTION_HOOK(__imp__VdInitializeRingBuffer, VdInitializeRingBuffer);
 GUEST_FUNCTION_HOOK(__imp__MmGetPhysicalAddress, MmGetPhysicalAddress);
-GUEST_FUNCTION_HOOK(__imp__VdSetSystemCommandBufferGpuIdentifierAddress, VdSetSystemCommandBufferGpuIdentifierAddress);
-GUEST_FUNCTION_HOOK(__imp__VdShutdownEngines, VdShutdownEngines);
 GUEST_FUNCTION_HOOK(__imp__VdQueryVideoMode, VdQueryVideoMode);
-GUEST_FUNCTION_HOOK(__imp__VdGetCurrentDisplayInformation, VdGetCurrentDisplayInformation);
-GUEST_FUNCTION_HOOK(__imp__VdSetDisplayMode, VdSetDisplayMode);
-GUEST_FUNCTION_HOOK(__imp__VdSetGraphicsInterruptCallback, VdSetGraphicsInterruptCallback);
-GUEST_FUNCTION_HOOK(__imp__VdInitializeEngines, VdInitializeEngines);
-GUEST_FUNCTION_HOOK(__imp__VdIsHSIOTrainingSucceeded, VdIsHSIOTrainingSucceeded);
-GUEST_FUNCTION_HOOK(__imp__VdGetCurrentDisplayGamma, VdGetCurrentDisplayGamma);
-GUEST_FUNCTION_HOOK(__imp__VdQueryVideoFlags, VdQueryVideoFlags);
-GUEST_FUNCTION_HOOK(__imp__VdCallGraphicsNotificationRoutines, VdCallGraphicsNotificationRoutines);
-GUEST_FUNCTION_HOOK(__imp__VdInitializeScalerCommandBuffer, VdInitializeScalerCommandBuffer);
 GUEST_FUNCTION_HOOK(__imp__VdRetrainEDRAM, VdRetrainEDRAM);
-GUEST_FUNCTION_HOOK(__imp__VdRetrainEDRAMWorker, VdRetrainEDRAMWorker);
 GUEST_FUNCTION_HOOK(__imp__MmAllocatePhysicalMemoryEx, MmAllocatePhysicalMemoryEx);
 GUEST_FUNCTION_HOOK(__imp__MmQueryAddressProtect, MmQueryAddressProtect);
-GUEST_FUNCTION_HOOK(__imp__VdEnableDisableClockGating, VdEnableDisableClockGating);
 GUEST_FUNCTION_HOOK(__imp__KeBugCheck, KeBugCheck);
 GUEST_FUNCTION_HOOK(__imp__KeSetEvent, KeSetEvent);
 GUEST_FUNCTION_HOOK(__imp__KeResetEvent, KeResetEvent);

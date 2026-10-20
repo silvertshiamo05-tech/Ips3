@@ -20,12 +20,15 @@ target_include_directories(BayonettaPPC PUBLIC
     ${XENONRECOMP_DIR}/thirdparty/simde)
 # Generated code is huge and machine-written: optimise it, but skip the warnings.
 target_compile_options(BayonettaPPC PRIVATE -w -fno-strict-aliasing)
+# Report indirect calls into code with no recompiled function instead of jumping to 0.
+target_compile_options(BayonettaPPC PRIVATE "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/src/cpu/indirect_call.h")
 
 add_executable(bayonetta
     src/main.cpp
     src/apu/audio.cpp
     src/hid/hid.cpp
     src/cpu/guest_thread.cpp
+    src/gpu/command_processor.cpp
     src/kernel/heap.cpp
     src/kernel/imports.cpp
     src/kernel/imports_bayonetta.cpp
@@ -33,6 +36,7 @@ add_executable(bayonetta
     src/kernel/memory.cpp
     src/kernel/module.cpp
     src/kernel/rtl.cpp
+    src/kernel/video.cpp
     src/kernel/virtual_memory.cpp
     src/kernel/xam.cpp
     src/kernel/xdm.cpp

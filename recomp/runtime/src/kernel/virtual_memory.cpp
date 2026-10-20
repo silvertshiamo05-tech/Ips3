@@ -32,7 +32,8 @@
 
 // Shared with Heap::Init: the user heap ends where the virtual allocation range starts.
 extern const uint32_t VIRTUAL_MEMORY_BEGIN = 0x40000000;
-extern const uint32_t VIRTUAL_MEMORY_END = 0x7FEA0000;
+// Ends below the GPU register window at 0x7FC80000.
+extern const uint32_t VIRTUAL_MEMORY_END = 0x7F000000;
 
 namespace
 {
