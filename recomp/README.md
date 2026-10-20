@@ -4,6 +4,10 @@ Ahead-of-time recompilation of Xbox 360 games to C++ with
 [XenonRecomp](https://github.com/hedge-dev/XenonRecomp), as a route to native iOS builds that
 need neither JIT nor the extended-virtual-addressing entitlement.
 
+**License:** everything under `recomp/` is GPL-3.0 (`recomp/COPYING`), because the runtime
+is adapted from UnleashedRecomp. It is a separate program from the PS3 emulator in the rest of
+this repository, which stays GPL-2.0-only like RPCS3.
+
 **No game data lives in this repository.** Every script reads your own copy of the game and
 writes everything derived from it (the decrypted executable, jump tables, generated C++) to a
 git-ignored `private/` directory.

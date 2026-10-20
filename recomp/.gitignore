@@ -1,5 +1,6 @@
 build/
 bayonetta/private/
+runtime/build/
 *.xex
 *.xexp
 *.iso
