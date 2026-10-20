@@ -19,6 +19,7 @@
 #include "Emu/Cell/Modules/cellSaveData.h"
 #include "Emu/Cell/Modules/cellSysutil.h"
 #include "Emu/Cell/Modules/sceNpTrophy.h"
+#include "Emu/Cell/timers.hpp"
 #include "Emu/IdManager.h"
 #include "Emu/Io/KeyboardHandler.h"
 #include "Emu/Io/Null/NullKeyboardHandler.h"
@@ -32,6 +33,7 @@
 #include "Emu/RSX/Overlays/overlay_manager.h"
 #include "Emu/RSX/Overlays/overlay_save_dialog.h"
 #include "Emu/RSX/Overlays/overlay_trophy_notification.h"
+#include "Emu/RSX/Overlays/overlay_utils.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/RSX/VK/VKGSRender.h"
 #include "Emu/System.h"
@@ -52,6 +54,7 @@
 #include "rpcs3_version.h"
 #include "util/logs.hpp"
 #include "util/sysinfo.hpp"
+#include "util/asm.hpp"
 #include "util/video_provider.h"
 
 #include <os/log.h>
@@ -59,7 +62,10 @@
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
