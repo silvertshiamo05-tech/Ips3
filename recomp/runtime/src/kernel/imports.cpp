@@ -1193,10 +1193,10 @@ void KeQuerySystemTime(be<uint64_t>* time)
 
 
 
-uint32_t ExTerminateThread()
+// void ExTerminateThread(uint32_t exitCode)
+void ExTerminateThread(uint32_t exitCode)
 {
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
+    throw GuestThreadExit{ exitCode };
 }
 
 uint32_t ExCreateThread(be<uint32_t>* handle, uint32_t stackSize, be<uint32_t>* threadId, uint32_t xApiThreadStartup, uint32_t startAddress, uint32_t startContext, uint32_t creationFlags)

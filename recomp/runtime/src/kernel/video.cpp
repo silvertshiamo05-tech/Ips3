@@ -127,13 +127,13 @@ void VdGetCurrentDisplayInformation(uint8_t* info)
 	Put<uint16_t>(info, 0x4E, DISPLAY_WIDTH);
 }
 
-// uint32_t VdInitializeScalerCommandBuffer(8 x uint32_t, uint32_t* dest, uint32_t count)
-// Fills the buffer with no-ops; callers only check for a non-zero result.
+// uint32_t VdInitializeScalerCommandBuffer(8 x uint32_t, void*, void*, uint32_t* dest, uint32_t count)
+// Bayonetta's kernel takes four stack arguments: two pointers, then the destination and its
+// size in dwords. The caller fills the destination with no-ops beforehand; leave it as is and
+// report it used in full.
 uint32_t VdInitializeScalerCommandBuffer(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
-	be<uint32_t>* dest, uint32_t count)
+	uint32_t, uint32_t, uint32_t dest, uint32_t count)
 {
-	for (uint32_t i = 0; dest && i < count; i++)
-		dest[i] = 0x80000000;
 	return count;
 }
 

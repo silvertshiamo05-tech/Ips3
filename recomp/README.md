@@ -83,6 +83,11 @@ Added on top of UnleashedRecomp:
   guest stack. Draw packets are counted, not drawn. Physical memory is the 512 MiB at
   `0xA0000000`, so GPU addresses map back with `0xA0000000 | address`.
 
+With `data00.cpk` and `data13.cpk` from the disc, the game finishes its init and runs its main
+loop headless: about 57 frames a second presented, each with ~80 draws, for as long as it is
+left running (tested for two minutes). Music and sound effects (`media/bgm`, `media/se`) are
+not on hand yet and are skipped.
+
 Next: drawing (Xenos shaders and draws -> Metal), XMA audio, input.
 
 ## Tools

@@ -147,7 +147,15 @@ uint32_t GuestThread::Start(const GuestThreadParams& params)
     GuestThreadContext ctx(cpuNumber);
     ctx.ppcContext.r3.u64 = params.value;
 
-    g_memory.FindFunction(params.function)(ctx.ppcContext, g_memory.base);
+    // Ips3: ExTerminateThread unwinds back here.
+    try
+    {
+        g_memory.FindFunction(params.function)(ctx.ppcContext, g_memory.base);
+    }
+    catch (const GuestThreadExit& exit)
+    {
+        return exit.code;
+    }
 
     return ctx.ppcContext.r3.u32;
 }

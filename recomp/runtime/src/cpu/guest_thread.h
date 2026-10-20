@@ -22,6 +22,13 @@ struct GuestThreadContext
     ~GuestThreadContext();
 };
 
+// Ips3: thrown by ExTerminateThread to end the calling guest thread; caught where the thread
+// started.
+struct GuestThreadExit
+{
+    uint32_t code;
+};
+
 struct GuestThreadParams
 {
     uint32_t function;

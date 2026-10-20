@@ -210,6 +210,9 @@ uint32_t NtFreeVirtualMemory(be<uint32_t>* baseAddress, be<uint32_t>* regionSize
 	std::lock_guard lock(g_mutex);
 
 	auto it = FindRegion(*baseAddress);
+	if (getenv("IPS3_TRACE_MEMORY"))
+		fmt::println(stderr, "[memory] free {:08X} size {:08X} type {:X} region {:08X}+{:X}", uint32_t(*baseAddress),
+			regionSize ? uint32_t(*regionSize) : 0, freeType, it != g_regions.end() ? it->first : 0, it != g_regions.end() ? it->second.size : 0);
 	if (it == g_regions.end())
 		return STATUS_MEMORY_NOT_ALLOCATED;
 
