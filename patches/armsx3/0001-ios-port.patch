@@ -114,10 +114,39 @@ index 8487ab6b9..cdcc11758 100644
 +
  set_directory_properties(PROPERTIES VS_STARTUP_PROJECT rpcs3)
 diff --git a/Utilities/File.cpp b/Utilities/File.cpp
-index d4c8d6deb..6aa4a689d 100644
+index d4c8d6deb..7f170c690 100644
 --- a/Utilities/File.cpp
 +++ b/Utilities/File.cpp
-@@ -2533,6 +2533,31 @@ std::string fs::get_executable_path()
+@@ -161,7 +161,9 @@ static fs::error to_error(DWORD e)
+ #include <copyfile.h>
+ #include <mach-o/dyld.h>
+ #include <limits.h>
++#ifndef IPS3_IOS
+ #include <sys/disk.h>
++#endif
+ #include <sys/param.h>
+ #include <sys/mount.h>
+ #elif defined(__linux__) || defined(__sun)
+@@ -171,7 +173,9 @@ static fs::error to_error(DWORD e)
+ #include <linux/fs.h>
+ #else
+ #include <fstream>
++#ifndef IPS3_IOS
+ #include <sys/disk.h>
++#endif
+ #include <sys/param.h>
+ #include <sys/mount.h>
+ #endif
+@@ -252,7 +256,7 @@ static u64 get_raw_device_size(int fd)
+ 	{
+ 		return size;
+ 	}
+-#elif defined(__APPLE__)
++#elif defined(__APPLE__) && !defined(IPS3_IOS)
+ 	u64 block_count = 0;
+ 	u32 block_size = 0;
+ 
+@@ -2533,6 +2537,31 @@ std::string fs::get_executable_path()
  #endif
  }
  
@@ -149,7 +178,7 @@ index d4c8d6deb..6aa4a689d 100644
  std::string fs::get_executable_dir()
  {
  #ifdef ANDROID
-@@ -2541,6 +2566,12 @@ std::string fs::get_executable_dir()
+@@ -2541,6 +2570,12 @@ std::string fs::get_executable_dir()
  	// Use magic static
  	static const std::string s_exe_dir = []
  	{
@@ -162,7 +191,7 @@ index d4c8d6deb..6aa4a689d 100644
  		std::string exe_path = get_executable_path();
  		if (exe_path.empty())
  		{
-@@ -2564,6 +2595,13 @@ const std::string& fs::get_config_dir([[maybe_unused]] bool get_config_subdirect
+@@ -2564,6 +2599,13 @@ const std::string& fs::get_config_dir([[maybe_unused]] bool get_config_subdirect
  	{
  		std::string dir;
  
@@ -176,7 +205,7 @@ index d4c8d6deb..6aa4a689d 100644
  		// Check if a portable directory exists.
  		std::string portable_dir = get_executable_dir() + "/portable/";
  		if (is_dir(portable_dir))
-@@ -2660,6 +2698,13 @@ const std::string& fs::get_cache_dir()
+@@ -2660,6 +2702,13 @@ const std::string& fs::get_cache_dir()
  	{
  		std::string dir;
  
@@ -191,7 +220,7 @@ index d4c8d6deb..6aa4a689d 100644
  		dir = get_config_dir();
  #else
 diff --git a/Utilities/Thread.cpp b/Utilities/Thread.cpp
-index ee0cfbbd9..d203776be 100644
+index ee0cfbbd9..c7ff8eb7d 100644
 --- a/Utilities/Thread.cpp
 +++ b/Utilities/Thread.cpp
 @@ -3211,6 +3211,23 @@ static void signal_handler(int sig, siginfo_t* info, void* uct) noexcept
@@ -218,6 +247,50 @@ index ee0cfbbd9..d203776be 100644
  #ifdef __ANDROID__
  	// Not our fault: hand it to whoever we displaced.
  	//
+@@ -4749,6 +4766,15 @@ void thread_ctrl::silent_exit() noexcept
+ }
+ 
+ 
++#if defined(ARCH_ARM64) && !defined(__linux__)
++// No sysfs: report no capacities, which makes the big.LITTLE split fall back to all cores.
++static const std::array<u32, 64>& get_arm_core_capacities()
++{
++	static const std::array<u32, 64> s_caps{};
++	return s_caps;
++}
++#endif
++
+ #if defined(ARCH_ARM64) && defined(__linux__)
+ // Per-core capacity from sysfs, read ONCE.
+ //
+diff --git a/buildfiles/cmake/ConfigureCompiler.cmake b/buildfiles/cmake/ConfigureCompiler.cmake
+index c7c6b251b..28dffe30f 100644
+--- a/buildfiles/cmake/ConfigureCompiler.cmake
++++ b/buildfiles/cmake/ConfigureCompiler.cmake
+@@ -70,10 +70,21 @@ else()
+ 	add_compile_options(-Werror=old-style-cast)
+ 	add_compile_options(-Werror=sign-compare)
+ 	add_compile_options(-Werror=reorder)
+-	add_compile_options(-Werror=return-type)
++	if(IOS AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
++		# Ips3: Xcode's clang does not see that fmt::throw_exception (a CTAD struct with a
++		# [[noreturn]] constructor) never returns, and reports every switch default ending in
++		# one. Same false positive ARMSX3 documents for clang 19.0.1; the code is correct.
++		add_compile_options(-Wno-return-type)
++	else()
++		add_compile_options(-Werror=return-type)
++	endif()
+ 	add_compile_options(-Werror=overloaded-virtual)
+ 	add_compile_options(-Werror=missing-noreturn)
+-	add_compile_options(-Werror=implicit-fallthrough)
++	if(IOS AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
++		add_compile_options(-Wno-implicit-fallthrough)
++	else()
++		add_compile_options(-Werror=implicit-fallthrough)
++	endif()
+ 	add_compile_options(-Wunused-parameter)
+ 	add_compile_options(-Wignored-qualifiers)
+ 	add_compile_options(-Wredundant-move)
 diff --git a/rpcs3/CMakeLists.txt b/rpcs3/CMakeLists.txt
 index cafc53b75..cfa7395b2 100644
 --- a/rpcs3/CMakeLists.txt
@@ -246,6 +319,29 @@ index cafc53b75..cfa7395b2 100644
 +if (NOT ANDROID AND NOT IOS)
      # Build rpcs3_lib
      add_library(rpcs3_lib STATIC)
+ 
+diff --git a/rpcs3/Emu/CMakeLists.txt b/rpcs3/Emu/CMakeLists.txt
+index 9687e34bc..c1c4d2d98 100644
+--- a/rpcs3/Emu/CMakeLists.txt
++++ b/rpcs3/Emu/CMakeLists.txt
+@@ -99,6 +99,10 @@ if(APPLE)
+     )
+ endif()
+ 
++if(ANDROID)
++    target_sources(rpcs3_emu PRIVATE Audio/Oboe/OboeBackend.cpp)
++endif()
++
+ target_include_directories(rpcs3_emu PUBLIC "${CMAKE_SOURCE_DIR}")
+ 
+ set_source_files_properties("../../Utilities/JITLLVM.cpp" "../../Utilities/JITASM.cpp" PROPERTIES
+@@ -152,7 +156,6 @@ target_sources(rpcs3_emu PRIVATE
+     Audio/AudioDumper.cpp
+     Audio/AudioBackend.cpp
+     Audio/Cubeb/CubebBackend.cpp
+-    Audio/Oboe/OboeBackend.cpp
+     Audio/Cubeb/cubeb_enumerator.cpp
+ )
  
 diff --git a/rpcs3/Emu/Io/pad_config_types.cpp b/rpcs3/Emu/Io/pad_config_types.cpp
 index 7a432cd65..7ba359398 100644
@@ -364,6 +460,72 @@ index 5c593bc5b..8abd71f70 100644
  void* GetCAMetalLayerFromMetalView(void* view) { return ((NSView*)view).layer; }
 +#endif
  #pragma GCC diagnostic pop
+diff --git a/rpcs3/Emu/system_config.h b/rpcs3/Emu/system_config.h
+index e2bb09cc2..49bdcaec5 100644
+--- a/rpcs3/Emu/system_config.h
++++ b/rpcs3/Emu/system_config.h
+@@ -136,7 +136,7 @@ struct cfg_root : cfg::node
+ 		// precision in half, which overflowed (Metal Gear Solid V's flat sky); since the fragment
+ 		// decompiler keeps that math in fp32, Low costs nothing in correctness where it counts.
+ 		cfg::_enum<gpu_preset_level> shader_precision{ this, "Shader Precision",
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) || defined(IPS3_IOS)
+ 			gpu_preset_level::low
+ #else
+ 			gpu_preset_level::high
+@@ -204,7 +204,7 @@ struct cfg_root : cfg::node
+ 		cfg::_bool disable_msl_fast_math{ this, "Disable MSL Fast Math", false };
+ 		cfg::_bool disable_async_host_memory_manager{ this, "Disable Asynchronous Memory Manager", false, true };
+ 		cfg::_enum<output_scaling_mode> output_scaling{ this, "Output Scaling Mode", output_scaling_mode::bilinear, true };
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) || defined(IPS3_IOS)
+ 		// ARMSX3: Lossless Scaling frame generation.
+ 		//
+ 		// Default off and it stays off unless the user supplies shaders from their own copy of
+@@ -236,7 +236,7 @@ struct cfg_root : cfg::node
+ 		// purchased copy. Kept here so the shader cache can be rebuilt without asking again.
+ 		cfg::string frame_generation_dll_path{ this, "Frame Generation Lossless Path", "", true };
+ #endif
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) || defined(IPS3_IOS)
+ 		// ARMSX3: absolute path to a RetroArch .slangp preset, used when
+ 		// Output Scaling Mode is "Shader chain (librashader)". Empty = no chain,
+ 		// which falls back to a plain blit rather than failing to present.
+@@ -467,7 +467,7 @@ struct cfg_root : cfg::node
+ 		// On by default on Android: a phone compiles shaders far slower than a PC, and without the
+ 		// hint a first-run stutter reads as the emulator being slow.
+ 		cfg::_bool show_shader_compilation_hint{ this, "Show shader compilation hint",
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) || defined(IPS3_IOS)
+ 			true,
+ #else
+ 			false,
+diff --git a/rpcs3/Emu/system_config_types.cpp b/rpcs3/Emu/system_config_types.cpp
+index a9f26e2d8..bcb985c4c 100644
+--- a/rpcs3/Emu/system_config_types.cpp
++++ b/rpcs3/Emu/system_config_types.cpp
+@@ -722,7 +722,7 @@ void fmt_class_string<output_scaling_mode>::format(std::string& out, u64 arg)
+ 		case output_scaling_mode::nearest: return "Nearest";
+ 		case output_scaling_mode::bilinear: return "Bilinear";
+ 		case output_scaling_mode::fsr: return "FidelityFX Super Resolution";
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) || defined(IPS3_IOS)
+ 		// Missing case here would serialise as `unknown` and the mode would
+ 		// silently never be selectable -- same trap as pad_handler::virtual_pad.
+ 		case output_scaling_mode::shader: return "Shader chain (librashader)";
+diff --git a/rpcs3/Emu/system_config_types.h b/rpcs3/Emu/system_config_types.h
+index 39c041a80..20af7c686 100644
+--- a/rpcs3/Emu/system_config_types.h
++++ b/rpcs3/Emu/system_config_types.h
+@@ -368,7 +368,7 @@ enum class output_scaling_mode
+ 	nearest,
+ 	bilinear,
+ 	fsr,
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) || defined(IPS3_IOS)
+ 	// ARMSX3: RetroArch (.slangp) chain via librashader, run as the output pass.
+ 	// Appended, never inserted -- these are serialised by ordinal in savestates
+ 	// and per-game configs, so inserting would silently remap existing settings.
 diff --git a/rpcs3/Input/mouse_gyro_handler.cpp b/rpcs3/Input/mouse_gyro_handler.cpp
 index c755e1ba4..8b663824f 100644
 --- a/rpcs3/Input/mouse_gyro_handler.cpp

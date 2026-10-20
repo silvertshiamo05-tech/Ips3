@@ -10,6 +10,8 @@
 
 #ifdef __cplusplus
 #include <pthread.h>
+// asmjit only includes this for macOS.
+#include <libkern/OSCacheControl.h>
 
 #define pthread_jit_write_protect_np(enabled) (static_cast<void>(enabled))
 #define pthread_jit_write_protect_supported_np() 0

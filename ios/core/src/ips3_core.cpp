@@ -9,11 +9,11 @@
 #include "stdafx.h"
 
 #include "ips3_core.h"
+#include "CoreAudioBackend.h"
 
 #include "Crypto/unedat.h"
 #include "Crypto/unpkg.h"
 #include "Crypto/unself.h"
-#include "Emu/Audio/Cubeb/CubebBackend.h"
 #include "Emu/Audio/Null/NullAudioBackend.h"
 #include "Emu/Cell/Modules/cellMsgDialog.h"
 #include "Emu/Cell/Modules/cellSaveData.h"
@@ -573,7 +573,7 @@ namespace
 			}
 			else
 			{
-				result = std::make_shared<CubebBackend>();
+				result = std::make_shared<CoreAudioBackend>();
 			}
 
 			if (!result->Initialized())
@@ -828,6 +828,7 @@ IPS3_EXPORT void ips3_apply_memory_profile(uint64_t physical_memory_bytes, uint6
 	g_cfg.video.vk.asynchronous_texture_streaming.set(false);
 	g_cfg.video.disable_msl_fast_math.set(false);
 
+	// "Cubeb" is the only non-null renderer in the iOS enum; the bridge maps it to RemoteIO.
 	g_cfg.audio.renderer.set(audio_renderer::cubeb);
 	g_cfg.audio.enable_buffering.set(true);
 	g_cfg.audio.desired_buffer_duration.set(64);

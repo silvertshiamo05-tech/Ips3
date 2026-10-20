@@ -27,6 +27,7 @@ set(IPS3_INPUT_SOURCES
 
 add_library(Ips3Core SHARED
     src/ips3_core.cpp
+    src/CoreAudioBackend.cpp
     include/ips3_core.h
     ${IPS3_INPUT_SOURCES}
     ${IPS3_RPCS3_DIR}/rpcs3_version.cpp

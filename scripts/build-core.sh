@@ -55,7 +55,9 @@ cmake -S "$CORE" -B "$OUT" -G Ninja \
 	-DSTATIC_LINK_LLVM=ON \
 	-DLLVM_DIR="$LLVM_IOS_DIR/lib/cmake/llvm" \
 	-DLLVM_TARGETS_TO_BUILD=AArch64 \
-	-DASMJIT_NO_SHM_OPEN=ON
+	-DASMJIT_NO_SHM_OPEN=ON \
+	`# cubeb's AudioUnit backend is macOS-only; iOS audio is CoreAudioBackend in ios/core` \
+	-DUSE_AUDIOUNIT=0
 
 log "Build core"
 ninja -C "$OUT" -j"$JOBS" -k 0 Ips3Core
