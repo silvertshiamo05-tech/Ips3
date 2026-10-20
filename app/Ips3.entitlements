@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	What the PS3 core needs from the process it runs in. When Ips3 is sideloaded on its own
+	(SideStore/AltStore), these are applied to Ips3. Under LiveContainer, Ips3 runs inside
+	LiveContainer's process, so LiveContainer itself must be signed with them.
+
+	extended-virtual-addressing: RPCS3 reserves ~26 GB of address space for the PS3's memory
+	map; without it the reservation fails and the core crashes while loading.
+	increased-memory-limit: raises the jetsam limit on a 4 GB iPad from ~2 GB to ~3 GB.
+	get-task-allow: lets a debugger attach, which is how JIT gets enabled.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+	<key>get-task-allow</key>
+	<true/>
+</dict>
+</plist>

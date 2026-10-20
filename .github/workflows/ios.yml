@@ -82,6 +82,24 @@ jobs:
           path: build/ffmpeg-ios
           key: ${{ steps.key.outputs.key }}
 
+  app:
+    name: App (Swift, without core)
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: scripts/ci/select-xcode.sh
+      - name: Install tools
+        run: brew install xcodegen || true
+      - name: Build app
+        env:
+          APP_ONLY: "1"
+        run: scripts/build-app.sh
+      - name: Swift errors
+        if: failure()
+        run: grep -E "error:" build/xcodebuild.log | head -n 200 || true
+
   build:
     name: Ips3 (core + app)
     needs: [llvm, ffmpeg]
