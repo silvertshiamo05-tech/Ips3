@@ -26,7 +26,13 @@ if [ "$(git -C "$SRC" rev-parse -q --verify HEAD 2>/dev/null || true)" != "$SHA"
 	git -C "$SRC" checkout -q FETCH_HEAD
 fi
 
+ccache_flags=()
+if command -v ccache >/dev/null; then
+	ccache_flags=(-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+fi
+
 common_llvm_flags=(
+	"${ccache_flags[@]}"
 	-DCMAKE_BUILD_TYPE=Release
 	-DLLVM_TARGETS_TO_BUILD=AArch64
 	-DLLVM_INCLUDE_TESTS=OFF
@@ -71,7 +77,10 @@ cmake -S "$SRC/llvm" -B "$TARGET" -G Ninja "${common_llvm_flags[@]}" \
 	-DLLVM_BUILD_RUNTIME=OFF \
 	-DLLVM_ENABLE_PLUGINS=OFF \
 	-DLLVM_ENABLE_PIC=ON \
-	-DBUILD_SHARED_LIBS=OFF
+	-DBUILD_SHARED_LIBS=OFF \
+	`# LLVM treats CMAKE_SYSTEM_NAME=iOS as non-Darwin and passes ld64 --gc-sections` \
+	-DLLVM_NO_DEAD_STRIP=ON \
+	-DCMAKE_MACOSX_BUNDLE=OFF
 
 ninja -C "$TARGET" -j"$JOBS" install
 

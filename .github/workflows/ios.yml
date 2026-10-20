@@ -43,10 +43,27 @@ jobs:
           lookup-only: true
       - name: Install tools
         if: steps.cache.outputs.cache-hit != 'true'
-        run: brew install ninja || true
+        run: brew install ninja ccache || true
+      - name: ccache (LLVM)
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-llvm-${{ github.sha }}
+          restore-keys: ccache-llvm-
       - name: Build LLVM
         if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+          CCACHE_MAXSIZE: 3G
+          CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime
         run: scripts/build-llvm-ios.sh
+      - name: Save ccache (LLVM)
+        if: always() && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-llvm-${{ github.sha }}
       - uses: actions/cache/save@v4
         if: steps.cache.outputs.cache-hit != 'true'
         with:
@@ -149,6 +166,7 @@ jobs:
           CCACHE_MAXSIZE: 4G
           CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime
         run: |
+          set -o pipefail
           ccache -z || true
           scripts/build-core.sh 2>&1 | tee build-core.log
           ccache -s || true
