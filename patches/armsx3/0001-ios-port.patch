@@ -475,6 +475,19 @@ index 07f90d54f..3e80a52c2 100644
  		utils::memory_decommit(g_hook_addr, 0x800000000);
  #endif
  
+diff --git a/rpcs3/Emu/RSX/VK/VKFrameGen.cpp b/rpcs3/Emu/RSX/VK/VKFrameGen.cpp
+index a484c5a4b..213f9593b 100644
+--- a/rpcs3/Emu/RSX/VK/VKFrameGen.cpp
++++ b/rpcs3/Emu/RSX/VK/VKFrameGen.cpp
+@@ -848,7 +848,7 @@ namespace vk::frame_gen
+ 	}
+ 
+ #else
+-	bool capture_presented_frame(const vk::command_buffer&, const vk::render_device&, VkImage, VkImageLayout, u32, u32)
++	bool capture_presented_frame(const vk::command_buffer&, const vk::render_device&, VkImage, VkImageLayout, u32, u32, u32, u32)
+ 	{
+ 		return false;
+ 	}
 diff --git a/rpcs3/Emu/RSX/VK/vkutils/metal_layer.mm b/rpcs3/Emu/RSX/VK/vkutils/metal_layer.mm
 index 5c593bc5b..8abd71f70 100644
 --- a/rpcs3/Emu/RSX/VK/vkutils/metal_layer.mm

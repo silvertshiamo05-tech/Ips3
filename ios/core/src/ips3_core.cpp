@@ -744,6 +744,17 @@ namespace
 	}
 } // namespace
 
+// Globals the core expects its frontend to define (rpcs3.cpp on desktop, the JNI bridge and
+// remote_play.cpp on Android).
+std::string g_input_config_override;
+cfg_input_configurations g_cfg_input_configs;
+
+// Remote play is Android-only; with max size 0 the presenter never captures.
+atomic_t<u32> g_remote_play_max_size{0};
+atomic_t<u32> g_remote_play_frames{0};
+atomic_t<u32> g_remote_play_skipped{0};
+atomic_t<bool> g_remote_play_hardware{false};
+
 // Upstream's desktop main() provides these two; the core calls them.
 [[noreturn]] void report_fatal_error(std::string_view text, bool /*is_html*/ = false, bool /*include_help_text*/ = true)
 {
