@@ -1,0 +1,29 @@
+# XenonRecomp configuration for Bayonetta (Xbox 360, retail default.xex,
+# SHA-1 3bdd498802c0d597f15f823e41175dcae47b9d2b). Paths are relative to recomp/bayonetta/private.
+# recompile.sh appends the generated leaf-function bounds.
+
+[main]
+file_path = "default.xex"
+out_directory_path = "ppc"
+switch_table_file_path = "switch_tables.toml"
+
+# No local-variable optimisations until the output is known to run correctly.
+skip_lr = false
+ctr_as_local = false
+xer_as_local = false
+reserved_as_local = false
+cr_as_local = false
+non_argument_as_local = false
+non_volatile_as_local = false
+
+# Register save/restore helpers, found by their signature instructions (XenonRecomp README).
+restgprlr_14_address = 0x8258ADC0
+savegprlr_14_address = 0x8258AD70
+restfpr_14_address = 0x8258AE6C
+savefpr_14_address = 0x8258AE20
+restvmx_14_address = 0x8258B158
+savevmx_14_address = 0x8258AEC0
+restvmx_64_address = 0x8258B1EC
+savevmx_64_address = 0x8258AF54
+
+# TODO: setjmp/longjmp, once located (callers of RtlUnwind).

@@ -1,0 +1,6 @@
+build/
+bayonetta/private/
+*.xex
+*.xexp
+*.iso
+__pycache__/
