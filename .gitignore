@@ -1,0 +1,6 @@
+build/
+.ccache/
+*.ipa
+DerivedData/
+app/Ips3.xcodeproj/
+.DS_Store

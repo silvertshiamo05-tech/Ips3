@@ -1,0 +1,862 @@
+diff --git a/3rdparty/CMakeLists.txt b/3rdparty/CMakeLists.txt
+index 0a37e616d..ebe9b8604 100644
+--- a/3rdparty/CMakeLists.txt
++++ b/3rdparty/CMakeLists.txt
+@@ -279,7 +279,7 @@ if(USE_SDL)
+ endif()
+ 
+ # OpenAL
+-if (NOT ANDROID)
++if (NOT ANDROID AND NOT IOS)
+ 	add_subdirectory(OpenAL EXCLUDE_FROM_ALL)
+ else()
+ 	add_library(3rdparty_openal INTERFACE)
+@@ -331,7 +331,7 @@ set_property(TARGET ${FAUDIO_TARGET} PROPERTY FOLDER "3rdparty/")
+ 
+ 
+ # FFMPEG
+-if(NOT ANDROID)
++if(NOT ANDROID AND NOT IOS)
+ 	add_library(3rdparty_ffmpeg INTERFACE)
+ 
+ 	# Select the version of ffmpeg to use, default is builtin
+diff --git a/3rdparty/cubeb/CMakeLists.txt b/3rdparty/cubeb/CMakeLists.txt
+index 6d1f231f0..a6e56f3a9 100644
+--- a/3rdparty/cubeb/CMakeLists.txt
++++ b/3rdparty/cubeb/CMakeLists.txt
+@@ -11,6 +11,19 @@ set(USE_SANITIZERS FALSE CACHE BOOL "Dont't use sanitizers")
+ add_subdirectory(cubeb EXCLUDE_FROM_ALL)
+ add_library(3rdparty::cubeb ALIAS cubeb)
+ 
++if(IOS)
++	# Ips3: cubeb links CoreServices for its macOS AudioUnit path. That framework does not
++	# exist on iOS, and cubeb's audiounit backend does not need it there.
++	foreach(prop LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
++		get_target_property(cubeb_libs cubeb ${prop})
++		if(cubeb_libs)
++			list(FILTER cubeb_libs EXCLUDE REGEX "CoreServices")
++			set_target_properties(cubeb PROPERTIES ${prop} "${cubeb_libs}")
++		endif()
++	endforeach()
++	target_link_libraries(cubeb PRIVATE "-framework AVFoundation")
++endif()
++
+ if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|ARM|aarch64|AArch64|Aarch64)")
+ 	target_compile_definitions(speex PUBLIC
+ 		#_USE_NEON
+diff --git a/3rdparty/hidapi/CMakeLists.txt b/3rdparty/hidapi/CMakeLists.txt
+index cdaac856b..bde772594 100644
+--- a/3rdparty/hidapi/CMakeLists.txt
++++ b/3rdparty/hidapi/CMakeLists.txt
+@@ -1,5 +1,13 @@
+ # hidapi
+-if(USE_SYSTEM_HIDAPI)
++if(IOS)
++	# Ips3: iOS has no IOKit HID or libusb access. Controllers arrive through the
++	# GameController framework and are fed to the virtual pad instead, so the HID pad
++	# handlers only need an hidapi that finds nothing.
++	add_library(3rdparty_hidapi STATIC ${IPS3_IOS_DIR}/src/stubs/hidapi_stub.c)
++	target_include_directories(3rdparty_hidapi PUBLIC
++		${CMAKE_CURRENT_SOURCE_DIR}/hidapi/hidapi
++		${CMAKE_CURRENT_SOURCE_DIR}/hidapi/mac)
++elseif(USE_SYSTEM_HIDAPI)
+ 	message(STATUS "RPCS3: using shared hidapi")
+ 	pkg_check_modules(hidapi-hidraw REQUIRED IMPORTED_TARGET hidapi-hidraw)
+ 	add_library(3rdparty_hidapi INTERFACE)
+diff --git a/3rdparty/libusb/os.cmake b/3rdparty/libusb/os.cmake
+index dc8718027..1c6b3866d 100644
+--- a/3rdparty/libusb/os.cmake
++++ b/3rdparty/libusb/os.cmake
+@@ -73,6 +73,14 @@ int main()
+ 				list(APPEND LIBUSB_LIBRARIES ${LIBOBJC})
+ 			endif()
+ 		endif()
++	else()
++		# Ips3: iOS/tvOS have no IOKit USB access for apps. libusb's null backend
++		# initialises and reports no devices, which is what sys_usbd should see.
++		set(PLATFORM_SRC
++			null_usb.c
++			threads_posix.c
++			events_posix.c
++		)
+ 	endif()
+ elseif (UNIX)
+ 	# Unix is for all *NIX systems including OSX
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8487ab6b9..cdcc11758 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -133,6 +133,17 @@ if(ANDROID)
+     include(${CMAKE_CURRENT_SOURCE_DIR}/android/ffmpeg.cmake)
+ endif()
+ 
++# Ips3: iOS build. IPS3_IOS_DIR points at the ios/core directory of the Ips3 repo,
++# which supplies the prebuilt ffmpeg target and the iOS framework target.
++if(IOS)
++    if(NOT IPS3_IOS_DIR)
++        message(FATAL_ERROR "IOS builds need -DIPS3_IOS_DIR=<Ips3>/ios/core")
++    endif()
++    include(${IPS3_IOS_DIR}/cmake/ffmpeg.cmake)
++    add_compile_definitions(IPS3_IOS=1)
++    add_compile_options("$<$<COMPILE_LANGUAGE:CXX,OBJCXX>:SHELL:-include ${IPS3_IOS_DIR}/include/ips3_ios_compat.h>")
++endif()
++
+ add_subdirectory(3rdparty)
+ 
+ if (DISABLE_LTO)
+@@ -173,4 +184,8 @@ if(ANDROID)
+     add_subdirectory(android)
+ endif()
+ 
++if(IOS)
++    add_subdirectory(${IPS3_IOS_DIR} ${CMAKE_BINARY_DIR}/ips3-ios)
++endif()
++
+ set_directory_properties(PROPERTIES VS_STARTUP_PROJECT rpcs3)
+diff --git a/Utilities/File.cpp b/Utilities/File.cpp
+index d4c8d6deb..6aa4a689d 100644
+--- a/Utilities/File.cpp
++++ b/Utilities/File.cpp
+@@ -2533,6 +2533,31 @@ std::string fs::get_executable_path()
+ #endif
+ }
+ 
++#ifdef IPS3_IOS
++// Ips3: the iOS frontend chooses every directory and exports it before the core is loaded.
++// HOME-derived defaults would land in the sandbox too, but under LiveContainer the process
++// HOME and executable belong to the host app, not to Ips3.
++static std::string ips3_env_dir(const char* name)
++{
++	const char* value = ::getenv(name);
++
++	if (!value || !*value)
++	{
++		return {};
++	}
++
++	std::string dir = value;
++
++	if (!dir.ends_with('/'))
++	{
++		dir += '/';
++	}
++
++	fs::create_path(dir);
++	return dir;
++}
++#endif
++
+ std::string fs::get_executable_dir()
+ {
+ #ifdef ANDROID
+@@ -2541,6 +2566,12 @@ std::string fs::get_executable_dir()
+ 	// Use magic static
+ 	static const std::string s_exe_dir = []
+ 	{
++#ifdef IPS3_IOS
++		if (std::string dir = ips3_env_dir("IPS3_RESOURCE_DIR"); !dir.empty())
++		{
++			return dir;
++		}
++#endif
+ 		std::string exe_path = get_executable_path();
+ 		if (exe_path.empty())
+ 		{
+@@ -2564,6 +2595,13 @@ const std::string& fs::get_config_dir([[maybe_unused]] bool get_config_subdirect
+ 	{
+ 		std::string dir;
+ 
++#ifdef IPS3_IOS
++		if (dir = ips3_env_dir("IPS3_DATA_DIR"); !dir.empty())
++		{
++			return dir;
++		}
++#endif
++
+ 		// Check if a portable directory exists.
+ 		std::string portable_dir = get_executable_dir() + "/portable/";
+ 		if (is_dir(portable_dir))
+@@ -2660,6 +2698,13 @@ const std::string& fs::get_cache_dir()
+ 	{
+ 		std::string dir;
+ 
++#ifdef IPS3_IOS
++		if (dir = ips3_env_dir("IPS3_CACHE_DIR"); !dir.empty())
++		{
++			return dir;
++		}
++#endif
++
+ #ifdef _WIN32
+ 		dir = get_config_dir();
+ #else
+diff --git a/Utilities/Thread.cpp b/Utilities/Thread.cpp
+index ee0cfbbd9..d203776be 100644
+--- a/Utilities/Thread.cpp
++++ b/Utilities/Thread.cpp
+@@ -3211,6 +3211,23 @@ static void signal_handler(int sig, siginfo_t* info, void* uct) noexcept
+ {
+ 	ucontext_t* context = static_cast<ucontext_t*>(uct);
+ 
++#if defined(RPCS3_IOS_VM) && defined(ARCH_ARM64)
++	// Ips3: JIT pages on iOS are W^X and flipped on demand (utils::ios_jit_handle_fault). This
++	// is the hot path for every first execution of freshly generated code, so it runs before
++	// anything else and touches nothing but the page in question.
++	{
++		const auto reason = aarch64::decode_fault_reason(context);
++		const bool is_exec = reason == aarch64::fault_reason::instruction_execute ||
++			(reason == aarch64::fault_reason::undefined && uptr(info->si_addr) == uptr(RIP(context)));
++		const bool is_write = reason == aarch64::fault_reason::data_write;
++
++		if ((is_exec || is_write) && utils::ios_jit_handle_fault(info->si_addr, is_exec, is_write))
++		{
++			return;
++		}
++	}
++#endif
++
+ #ifdef __ANDROID__
+ 	// Not our fault: hand it to whoever we displaced.
+ 	//
+diff --git a/rpcs3/CMakeLists.txt b/rpcs3/CMakeLists.txt
+index cafc53b75..cfa7395b2 100644
+--- a/rpcs3/CMakeLists.txt
++++ b/rpcs3/CMakeLists.txt
+@@ -23,7 +23,7 @@ if(UNIX AND NOT APPLE AND NOT ANDROID)
+     endif()
+ endif()
+ 
+-if (NOT ANDROID)
++if (NOT ANDROID AND NOT IOS)
+     # Qt
+     # finds Qt libraries and setups custom commands for MOC and UIC
+     # Must be done here because generated MOC and UIC targets cant
+@@ -34,13 +34,13 @@ endif()
+ # subdirectories
+ add_subdirectory(Emu)
+ 
+-if (NOT ANDROID)
++if (NOT ANDROID AND NOT IOS)
+     add_subdirectory(rpcs3qt)
+ endif()
+ 
+ gen_git_version(${CMAKE_CURRENT_SOURCE_DIR})
+ 
+-if (NOT ANDROID)
++if (NOT ANDROID AND NOT IOS)
+     # Build rpcs3_lib
+     add_library(rpcs3_lib STATIC)
+ 
+diff --git a/rpcs3/Emu/Io/pad_config_types.cpp b/rpcs3/Emu/Io/pad_config_types.cpp
+index 7a432cd65..7ba359398 100644
+--- a/rpcs3/Emu/Io/pad_config_types.cpp
++++ b/rpcs3/Emu/Io/pad_config_types.cpp
+@@ -25,7 +25,7 @@ void fmt_class_string<pad_handler>::format(std::string& out, u64 arg)
+ #ifdef HAVE_LIBEVDEV
+ 		case pad_handler::evdev: return "Evdev";
+ #endif
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) || defined(IPS3_IOS)
+ 		case pad_handler::virtual_pad: return "Virtual";
+ #endif
+ 		}
+diff --git a/rpcs3/Emu/Io/pad_config_types.h b/rpcs3/Emu/Io/pad_config_types.h
+index 162c33011..012279483 100644
+--- a/rpcs3/Emu/Io/pad_config_types.h
++++ b/rpcs3/Emu/Io/pad_config_types.h
+@@ -21,7 +21,7 @@ enum class pad_handler
+ #ifdef HAVE_LIBEVDEV
+ 	evdev,
+ #endif
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) || defined(IPS3_IOS)
+ 	virtual_pad,
+ #endif
+ };
+diff --git a/rpcs3/Emu/Memory/vm.cpp b/rpcs3/Emu/Memory/vm.cpp
+index 07f90d54f..3e80a52c2 100644
+--- a/rpcs3/Emu/Memory/vm.cpp
++++ b/rpcs3/Emu/Memory/vm.cpp
+@@ -63,11 +63,20 @@ namespace vm
+ 	// Auxiliary virtual memory for executable areas
+ 	u8* const g_exec_addr = memory_reserve_4GiB(g_sudo_addr, 0x300000000);
+ 
++#ifdef RPCS3_IOS_VM
++	// iOS: the 32 GiB hook area is never referenced outside this file, and the address space it
++	// would take is most of what an iOS process gets even with extended virtual addressing.
++	u8* const g_hook_addr = g_exec_addr;
++
++	// Stats for debugging (placed after the 12 GiB exec area)
++	u8* const g_stat_addr = memory_reserve_4GiB(g_exec_addr + 0x200000000);
++#else
+ 	// Hooks for memory R/W interception (default: zero offset to some function with only ret instructions)
+ 	u8* const g_hook_addr = memory_reserve_4GiB(g_exec_addr, 0x800000000);
+ 
+ 	// Stats for debugging
+ 	u8* const g_stat_addr = memory_reserve_4GiB(g_hook_addr);
++#endif
+ 
+ 	// For SPU
+ 	u8* const g_free_addr = g_stat_addr + 0x1'0000'0000;
+@@ -2719,7 +2728,9 @@ namespace vm
+ 
+ 	inline namespace ps3_
+ 	{
++#ifndef RPCS3_IOS_VM
+ 		static utils::shm s_hook{0x800000000, ""};
++#endif
+ 
+ 		void init()
+ 		{
+@@ -2755,10 +2766,12 @@ namespace vm
+ 			std::memset(g_range_lock_set, 0, sizeof(g_range_lock_set));
+ 			std::memset(g_range_lock_bits, 0, sizeof(g_range_lock_bits));
+ 
+-#ifdef _WIN32
++#if defined(_WIN32)
+ 			utils::memory_release(g_hook_addr, 0x800000000);
+ #endif
++#ifndef RPCS3_IOS_VM
+ 			ensure(s_hook.map(g_hook_addr, utils::protection::rw, true));
++#endif
+ 		}
+ 	}
+ 
+@@ -2785,7 +2798,7 @@ namespace vm
+ #ifdef _WIN32
+ 		s_hook.unmap(g_hook_addr);
+ 		ensure(utils::memory_reserve(0x800000000, g_hook_addr));
+-#else
++#elif !defined(RPCS3_IOS_VM)
+ 		utils::memory_decommit(g_hook_addr, 0x800000000);
+ #endif
+ 
+diff --git a/rpcs3/Emu/RSX/VK/vkutils/metal_layer.mm b/rpcs3/Emu/RSX/VK/vkutils/metal_layer.mm
+index 5c593bc5b..8abd71f70 100644
+--- a/rpcs3/Emu/RSX/VK/vkutils/metal_layer.mm
++++ b/rpcs3/Emu/RSX/VK/vkutils/metal_layer.mm
+@@ -3,8 +3,27 @@
+ #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+ #pragma GCC diagnostic ignored "-Wmissing-declarations"
+ #import <Foundation/Foundation.h>
+-#import <AppKit/AppKit.h>
+ #import <QuartzCore/QuartzCore.h>
++#include <TargetConditionals.h>
++
++#if TARGET_OS_IPHONE
++#import <UIKit/UIKit.h>
++
++// iOS: the frontend hands over either the CAMetalLayer itself or a UIView backed by one.
++void* GetCAMetalLayerFromMetalView(void* view)
++{
++	id obj = (__bridge id)view;
++
++	if ([obj isKindOfClass:[CAMetalLayer class]])
++	{
++		return view;
++	}
++
++	return (__bridge void*)((UIView*)obj).layer;
++}
++#else
++#import <AppKit/AppKit.h>
+ 
+ void* GetCAMetalLayerFromMetalView(void* view) { return ((NSView*)view).layer; }
++#endif
+ #pragma GCC diagnostic pop
+diff --git a/rpcs3/Input/mouse_gyro_handler.cpp b/rpcs3/Input/mouse_gyro_handler.cpp
+index c755e1ba4..8b663824f 100644
+--- a/rpcs3/Input/mouse_gyro_handler.cpp
++++ b/rpcs3/Input/mouse_gyro_handler.cpp
+@@ -5,7 +5,7 @@
+ // QEvent/QWindow). pad_thread holds a mouse_gyro_handler BY VALUE and calls
+ // set_enabled()/apply_gyro(), so Android needs this translation unit even
+ // though it has no mouse -- just not the Qt half.
+-#ifndef __ANDROID__
++#if !defined(__ANDROID__) && !defined(IPS3_IOS)
+ #include <QEvent>
+ #include <QMouseEvent>
+ #include <QWheelEvent>
+@@ -68,7 +68,7 @@ void mouse_gyro_handler::set_gyro_y(s32 steps)
+ 	m_gyro_y = static_cast<u16>(std::clamp(m_gyro_y + steps, 0, DEFAULT_MOTION_Y * 2 - 1));
+ }
+ 
+-#ifndef __ANDROID__
++#if !defined(__ANDROID__) && !defined(IPS3_IOS)
+ void mouse_gyro_handler::handle_event(QEvent* ev, const QWindow& win)
+ {
+ 	if (!m_enabled)
+diff --git a/rpcs3/Input/pad_thread.cpp b/rpcs3/Input/pad_thread.cpp
+index 84a492150..6f15bac2a 100644
+--- a/rpcs3/Input/pad_thread.cpp
++++ b/rpcs3/Input/pad_thread.cpp
+@@ -7,7 +7,7 @@
+ #include "dualsense_pad_handler.h"
+ #include "skateboard_pad_handler.h"
+ #include "ps_move_handler.h"
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) || defined(IPS3_IOS)
+ #include "virtual_pad_handler.h"
+ #endif
+ #ifdef _WIN32
+@@ -19,7 +19,7 @@
+ #ifdef HAVE_SDL3
+ #include "sdl_pad_handler.h"
+ #endif
+-#ifndef ANDROID
++#if !defined(ANDROID) && !defined(IPS3_IOS)
+ #include "keyboard_pad_handler.h"
+ #endif
+ #include "Emu/Io/Null/NullPadHandler.h"
+@@ -161,7 +161,7 @@ void pad_thread::Init()
+ 
+ 	input_log.trace("Using pad config:\n%s", g_cfg_input);
+ 
+-#ifndef ANDROID
++#if !defined(ANDROID) && !defined(IPS3_IOS)
+ 	std::shared_ptr<keyboard_pad_handler> keyptr;
+ #endif
+ 
+@@ -184,7 +184,7 @@ void pad_thread::Init()
+ 		{
+ 			if (handler_type == pad_handler::keyboard)
+ 			{
+-#ifndef ANDROID
++#if !defined(ANDROID) && !defined(IPS3_IOS)
+ 				keyptr = std::make_shared<keyboard_pad_handler>();
+ 				keyptr->moveToThread(static_cast<QThread*>(m_curthread));
+ 				keyptr->SetTargetWindow(static_cast<QWindow*>(m_curwindow));
+@@ -945,7 +945,7 @@ std::shared_ptr<PadHandlerBase> pad_thread::GetHandler(pad_handler type)
+ 	case pad_handler::null:
+ 		return std::make_shared<NullPadHandler>();
+ 	case pad_handler::keyboard:
+-#ifdef ANDROID
++#if defined(ANDROID) || defined(IPS3_IOS)
+ 		return std::make_shared<NullPadHandler>();
+ #else
+ 		return std::make_shared<keyboard_pad_handler>();
+@@ -974,7 +974,7 @@ std::shared_ptr<PadHandlerBase> pad_thread::GetHandler(pad_handler type)
+ 	case pad_handler::evdev:
+ 		return std::make_shared<evdev_joystick_handler>();
+ #endif
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) || defined(IPS3_IOS)
+ 	// ARMSX3: on-screen touch controls. Guard must match the enum value in
+ 	// Emu/Io/pad_config_types.h and the fmt_class_string case beside it.
+ 	case pad_handler::virtual_pad:
+diff --git a/rpcs3/util/vm.hpp b/rpcs3/util/vm.hpp
+index 2360e6c7c..15038a5f8 100644
+--- a/rpcs3/util/vm.hpp
++++ b/rpcs3/util/vm.hpp
+@@ -5,6 +5,14 @@
+ 
+ #include <string>
+ 
++#ifdef __APPLE__
++#include <TargetConditionals.h>
++#if TARGET_OS_IPHONE
++// iOS: no MAP_JIT, no shm_open, no RWX pages (see vm_native.cpp).
++#define RPCS3_IOS_VM 1
++#endif
++#endif
++
+ namespace utils
+ {
+ #ifdef _WIN32
+@@ -13,6 +21,13 @@ namespace utils
+ 	using native_handle = int;
+ #endif
+ 
++#ifdef RPCS3_IOS_VM
++	// Called first thing from the SIGSEGV/SIGBUS handler. JIT pages are kept W^X: a page is
++	// writable until code on it is executed, then executable until something writes to it.
++	// Returns true when the fault was such a flip and the instruction can be retried.
++	bool ios_jit_handle_fault(const void* fault_addr, bool is_exec, bool is_write);
++#endif
++
+ 	// Obtain system page size
+ 	long get_page_size();
+ 
+diff --git a/rpcs3/util/vm_native.cpp b/rpcs3/util/vm_native.cpp
+index a5489c946..5e08159f0 100644
+--- a/rpcs3/util/vm_native.cpp
++++ b/rpcs3/util/vm_native.cpp
+@@ -22,6 +22,21 @@
+ #include <vm/vm_param.h>
+ #endif
+ 
++#ifdef __APPLE__
++#include <TargetConditionals.h>
++#if TARGET_OS_IPHONE
++// Ips3: iOS. Apple reserves MAP_JIT for its own processes (the dynamic-codesigning
++// entitlement), and shm_open() is denied by the app sandbox. JIT memory is therefore
++// plain anonymous memory kept W^X by flipping page protections on fault (see
++// ios_jit_handle_fault), which works once the process is CS_DEBUGGED ("JIT enabled"),
++// and shared memory is a Mach named memory entry mapped with vm_map().
++#define RPCS3_IOS_VM 1
++#include <mach/mach.h>
++#include <mach/vm_map.h>
++#include <libkern/OSCacheControl.h>
++#endif
++#endif
++
+ #ifdef __linux__
+ #include <sys/syscall.h>
+ #include <linux/memfd.h>
+@@ -215,7 +230,13 @@ namespace utils
+ 		case protection::rw: _prot = PROT_READ | PROT_WRITE; break;
+ 		case protection::ro: _prot = PROT_READ; break;
+ 		case protection::no: break;
++#ifdef RPCS3_IOS_VM
++		// Never RWX on iOS: the kernel refuses it outside MAP_JIT. Writable now, made
++		// executable page by page when first executed (ios_jit_handle_fault).
++		case protection::wx: _prot = PROT_READ | PROT_WRITE; break;
++#else
+ 		case protection::wx: _prot = PROT_READ | PROT_WRITE | PROT_EXEC; break;
++#endif
+ 		case protection::rx: _prot = PROT_READ | PROT_EXEC; break;
+ 		}
+ #endif
+@@ -223,6 +244,142 @@ namespace utils
+ 		return _prot;
+ 	}
+ 
++#ifdef RPCS3_IOS_VM
++	// Address ranges that may hold JIT code. Registered by memory_reserve(can_be_jit) and by
++	// any wx commit, read lock-free from the fault handler.
++	struct ios_jit_range
++	{
++		atomic_t<u64> begin{0};
++		atomic_t<u64> end{0};
++	};
++
++	static ios_jit_range s_ios_jit_ranges[256]{};
++
++	static void ios_jit_register(const void* ptr, usz size)
++	{
++		const u64 b = reinterpret_cast<u64>(ptr);
++		const u64 e = b + size;
++
++		for (auto& r : s_ios_jit_ranges)
++		{
++			if (r.begin <= b && e <= r.end)
++			{
++				return;
++			}
++		}
++
++		for (auto& r : s_ios_jit_ranges)
++		{
++			if (r.begin == 0 && r.begin.compare_and_swap_test(0, u64{umax}))
++			{
++				r.end = e;
++				r.begin = b;
++				return;
++			}
++		}
++
++		fprintf(stderr, "ios_jit_register: out of JIT range slots (%p, 0x%zx)\n", ptr, size);
++	}
++
++	static void ios_jit_unregister(const void* ptr, usz size)
++	{
++		const u64 b = reinterpret_cast<u64>(ptr);
++		const u64 e = b + size;
++
++		for (auto& r : s_ios_jit_ranges)
++		{
++			if (r.begin != u64{umax} && r.begin >= b && r.end <= e && r.begin != r.end)
++			{
++				r.end = 0;
++				r.begin = 0;
++			}
++		}
++	}
++
++	static bool ios_is_jit_address(u64 addr)
++	{
++		for (auto& r : s_ios_jit_ranges)
++		{
++			const u64 b = r.begin;
++
++			if (b && b != u64{umax} && addr >= b && addr < r.end)
++			{
++				return true;
++			}
++		}
++
++		return false;
++	}
++
++	bool ios_jit_handle_fault(const void* fault_addr, bool is_exec, bool is_write)
++	{
++		const u64 addr = reinterpret_cast<u64>(fault_addr);
++
++		if (!ios_is_jit_address(addr))
++		{
++			return false;
++		}
++
++		const u64 psize = get_page_size();
++		const u64 page = addr & ~(psize - 1);
++
++		// Ask the kernel what the page is now rather than trusting the fault class alone: a
++		// page that was never committed stays a genuine fault, and two threads racing to flip
++		// the same page both see the state the winner left.
++		vm_address_t region = page;
++		vm_size_t region_size = 0;
++		vm_region_basic_info_data_64_t info{};
++		mach_msg_type_number_t count = VM_REGION_BASIC_INFO_COUNT_64;
++		mach_port_t object = MACH_PORT_NULL;
++
++		if (vm_region_64(mach_task_self(), &region, &region_size, VM_REGION_BASIC_INFO_64, reinterpret_cast<vm_region_info_t>(&info), &count, &object) != KERN_SUCCESS || region > page)
++		{
++			return false;
++		}
++
++		const int cur = info.protection;
++
++		if (is_exec)
++		{
++			if (cur & VM_PROT_EXECUTE)
++			{
++				// Already flipped by another thread.
++				return true;
++			}
++
++			if ((cur & (VM_PROT_READ | VM_PROT_WRITE)) != (VM_PROT_READ | VM_PROT_WRITE))
++			{
++				return false;
++			}
++
++			if (::mprotect(reinterpret_cast<void*>(page), psize, PROT_READ | PROT_EXEC) != 0)
++			{
++				return false;
++			}
++
++			sys_icache_invalidate(reinterpret_cast<void*>(page), psize);
++			return true;
++		}
++
++		if (is_write)
++		{
++			if (cur & VM_PROT_WRITE)
++			{
++				return true;
++			}
++
++			if ((cur & (VM_PROT_READ | VM_PROT_EXECUTE)) != (VM_PROT_READ | VM_PROT_EXECUTE))
++			{
++				return false;
++			}
++
++			return ::mprotect(reinterpret_cast<void*>(page), psize, PROT_READ | PROT_WRITE) == 0;
++		}
++
++		return false;
++	}
++#endif
++
+ 	void* memory_reserve(usz size, void* use_addr, [[maybe_unused]] bool is_memory_mapping, [[maybe_unused]] bool can_be_jit)
+ 	{
+ #ifdef _WIN32
+@@ -255,7 +412,7 @@ namespace utils
+ 		// Memory mapping regions will be replaced by file-backed MAP_FIXED mappings
+ 		// (via shm::map), which is incompatible with MAP_JIT. Only use MAP_JIT for
+ 		// non-mapping regions that need JIT executable support.
+-#ifdef __APPLE__
++#if defined(__APPLE__) && !defined(RPCS3_IOS_VM)
+ 		const int jit_flag = is_memory_mapping || !can_be_jit ? 0 : MAP_JIT;
+ #ifdef ARCH_ARM64
+ 		auto ptr = ::mmap(use_addr, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | jit_flag | c_map_noreserve, -1, 0);
+@@ -291,6 +448,13 @@ namespace utils
+ 			ptr = static_cast<u8*>(ptr) + (0x10000 - misalign);
+ 		}
+ 
++#ifdef RPCS3_IOS_VM
++		if (can_be_jit && !is_memory_mapping)
++		{
++			ios_jit_register(ptr, orig_size);
++		}
++#endif
++
+ 		if constexpr (c_madv_hugepage != 0)
+ 		{
+ 			if (orig_size % 0x200000 == 0)
+@@ -322,6 +486,12 @@ namespace utils
+ #ifdef _WIN32
+ 		ensure(::VirtualAlloc(pointer, size, MEM_COMMIT, +prot));
+ #else
++#ifdef RPCS3_IOS_VM
++		if (prot == protection::wx)
++		{
++			ios_jit_register(pointer, size);
++		}
++#endif
+ 		const u64 ptr64 = reinterpret_cast<u64>(pointer);
+ 		ensure(::mprotect(reinterpret_cast<void*>(ptr64 & -get_page_size()), size + (ptr64 & (get_page_size() - 1)), +prot) != -1);
+ 
+@@ -346,6 +516,12 @@ namespace utils
+ #ifdef _WIN32
+ 		return ::VirtualAlloc(pointer, size, MEM_COMMIT, +prot) != nullptr;
+ #else
++#ifdef RPCS3_IOS_VM
++		if (prot == protection::wx)
++		{
++			ios_jit_register(pointer, size);
++		}
++#endif
+ 		const u64 ptr64 = reinterpret_cast<u64>(pointer);
+ 		void* const base = reinterpret_cast<void*>(ptr64 & -get_page_size());
+ 		const usz len = size + (ptr64 & (get_page_size() - 1));
+@@ -381,7 +557,7 @@ namespace utils
+ 		ensure(::VirtualFree(pointer, size, MEM_DECOMMIT));
+ #else
+ 		const u64 ptr64 = reinterpret_cast<u64>(pointer);
+-#if defined(__APPLE__) && defined(ARCH_ARM64)
++#if defined(__APPLE__) && defined(ARCH_ARM64) && !defined(RPCS3_IOS_VM)
+ 		// Hack: on macOS, Apple explicitly fails mmap if you combine MAP_FIXED and MAP_JIT.
+ 		// So we unmap the space and just hope it maps to the same address we got before instead.
+ 		// The Xcode manpage says the pointer is a hint and the OS will try to map at the hint location
+@@ -415,7 +591,7 @@ namespace utils
+ 		memory_commit(pointer, size, prot);
+ #else
+ 		const u64 ptr64 = reinterpret_cast<u64>(pointer);
+-#if defined(__APPLE__) && defined(ARCH_ARM64)
++#if defined(__APPLE__) && defined(ARCH_ARM64) && !defined(RPCS3_IOS_VM)
+ 		ensure(::munmap(pointer, size) != -1);
+ 		ensure(::mmap(pointer, size, +prot,  MAP_ANON | MAP_PRIVATE | (can_be_jit ? MAP_JIT : 0), -1, 0) == pointer);
+ #else
+@@ -452,6 +628,9 @@ namespace utils
+ 		unmap_mappping_memory(reinterpret_cast<u64>(pointer), size);
+ 		ensure(::VirtualFree(pointer, 0, MEM_RELEASE));
+ #else
++#ifdef RPCS3_IOS_VM
++		ios_jit_unregister(pointer, size);
++#endif
+ 		ensure(::munmap(pointer, size) != -1);
+ #endif
+ 	}
+@@ -505,6 +684,12 @@ namespace utils
+ 			addr += block_size;
+ 		}
+ #else
++#ifdef RPCS3_IOS_VM
++		if (prot == protection::wx)
++		{
++			ios_jit_register(pointer, size);
++		}
++#endif
+ 		const u64 ptr64 = reinterpret_cast<u64>(pointer);
+ 		ensure(::mprotect(reinterpret_cast<void*>(ptr64 & -get_page_size()), size + (ptr64 & (get_page_size() - 1)), +prot) != -1);
+ #endif
+@@ -541,6 +726,61 @@ namespace utils
+ #endif
+ 	}
+ 
++#ifdef RPCS3_IOS_VM
++	static int ios_make_memory_entry(u64 size)
++	{
++		memory_object_size_t entry_size = size;
++		mach_port_t entry = MACH_PORT_NULL;
++
++		const kern_return_t kr = mach_make_memory_entry_64(mach_task_self(), &entry_size, 0,
++			MAP_MEM_NAMED_CREATE | VM_PROT_READ | VM_PROT_WRITE, &entry, MACH_PORT_NULL);
++
++		if (kr != KERN_SUCCESS || entry_size < size)
++		{
++			fmt::throw_exception("mach_make_memory_entry_64(0x%x) failed (kr=%d, size=0x%x)", size, kr, entry_size);
++		}
++
++		return static_cast<int>(entry);
++	}
++
++	static vm_prot_t ios_vm_prot(protection prot)
++	{
++		switch (prot)
++		{
++		case protection::rw: return VM_PROT_READ | VM_PROT_WRITE;
++		case protection::ro: return VM_PROT_READ;
++		case protection::no: return VM_PROT_NONE;
++		case protection::wx: return VM_PROT_READ | VM_PROT_WRITE;
++		case protection::rx: return VM_PROT_READ | VM_PROT_EXECUTE;
++		}
++
++		return VM_PROT_NONE;
++	}
++
++	// vm_map() of the named entry. fixed: replace whatever is at ptr (MAP_FIXED semantics).
++	static u8* ios_map_entry(int entry, u64 size, void* ptr, protection prot, bool cow, bool fixed)
++	{
++		vm_address_t addr = reinterpret_cast<vm_address_t>(ptr);
++		int flags = VM_FLAGS_ANYWHERE;
++
++		if (ptr)
++		{
++			flags = fixed ? (VM_FLAGS_FIXED | VM_FLAGS_OVERWRITE) : VM_FLAGS_FIXED;
++		}
++
++		const kern_return_t kr = vm_map(mach_task_self(), &addr, size, ptr ? 0 : 0xffff, flags,
++			static_cast<mach_port_t>(entry), 0, cow, ios_vm_prot(prot), VM_PROT_READ | VM_PROT_WRITE,
++			cow ? VM_INHERIT_COPY : VM_INHERIT_SHARE);
++
++		if (kr != KERN_SUCCESS)
++		{
++			return nullptr;
++		}
++
++		return reinterpret_cast<u8*>(addr);
++	}
++#endif
++
+ 	shm::shm(u64 size, u32 flags)
+ 		: m_flags(flags)
+ 		, m_size(utils::align(size, 0x10000))
+@@ -567,6 +807,8 @@ namespace utils
+ 
+ 		ensure(m_file >= 0);
+ 		ensure(::ftruncate(m_file, m_size) >= 0);
++#elif defined(RPCS3_IOS_VM)
++		m_file = ios_make_memory_entry(m_size);
+ #else
+ 		const std::string name = "/rpcs3-mem-" + std::to_string(reinterpret_cast<u64>(this));
+ 
+@@ -754,6 +996,10 @@ namespace utils
+ 		{
+ 			m_storage = std::move(storage1);
+ 		}
++#elif defined(RPCS3_IOS_VM)
++		// No sparse backing file: the named entry is zero-fill-on-demand anonymous memory.
++		static_cast<void>(storage);
++		m_file = ios_make_memory_entry(m_size);
+ #else
+ 
+ #ifdef __linux__
+@@ -862,6 +1108,8 @@ namespace utils
+ 
+ #ifdef _WIN32
+ 		::CloseHandle(m_handle);
++#elif defined(RPCS3_IOS_VM)
++		mach_port_deallocate(mach_task_self(), static_cast<mach_port_t>(m_file));
+ #else
+ 		::close(m_file);
+ #endif
+@@ -907,6 +1155,9 @@ namespace utils
+ 		}
+ 
+ 		return nullptr;
++#elif defined(RPCS3_IOS_VM)
++		const u64 ptr64 = reinterpret_cast<u64>(ptr) & -0x10000;
++		return ios_map_entry(m_file, m_size, reinterpret_cast<void*>(ptr64), prot, cow, true);
+ #else
+ 		const u64 ptr64 = reinterpret_cast<u64>(ptr) & -0x10000;
+ 
+@@ -946,6 +1197,8 @@ namespace utils
+ 
+ #ifdef _WIN32
+ 		return this->map(target, prot, cow);
++#elif defined(RPCS3_IOS_VM)
++		return ios_map_entry(m_file, m_size, target, prot, cow, false);
+ #else
+ 		const auto result = reinterpret_cast<u8*>(::mmap(reinterpret_cast<void*>(target), m_size, +prot, (cow ? MAP_PRIVATE : MAP_SHARED), m_file, 0));
+ 

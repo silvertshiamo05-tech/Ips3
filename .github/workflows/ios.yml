@@ -1,0 +1,142 @@
+name: iOS build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IOS_DEPLOYMENT_TARGET: "17.0"
+  # Bump to throw away a cached dependency build.
+  DEPS_CACHE_VERSION: "v1"
+
+jobs:
+  llvm:
+    name: LLVM for iOS
+    runs-on: macos-15
+    timeout-minutes: 340
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch ARMSX3 (shallow)
+        run: git submodule update --init --depth 1 core/armsx3
+      - name: Select Xcode
+        run: scripts/ci/select-xcode.sh
+      - id: key
+        name: Cache key
+        run: |
+          sha=$(git -C core/armsx3 ls-tree HEAD 3rdparty/llvm/llvm | awk '{print $3}')
+          echo "key=llvm-ios-${sha}-${IOS_DEPLOYMENT_TARGET}-${DEPS_CACHE_VERSION}-${{ hashFiles('scripts/build-llvm-ios.sh') }}" >> "$GITHUB_OUTPUT"
+      - id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/llvm-ios
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+      - name: Install tools
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: brew install ninja || true
+      - name: Build LLVM
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: scripts/build-llvm-ios.sh
+      - uses: actions/cache/save@v4
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: build/llvm-ios
+          key: ${{ steps.key.outputs.key }}
+
+  ffmpeg:
+    name: FFmpeg for iOS
+    runs-on: macos-15
+    timeout-minutes: 90
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: scripts/ci/select-xcode.sh
+      - id: key
+        name: Cache key
+        run: |
+          source scripts/common.sh
+          echo "key=ffmpeg-ios-${FFMPEG_VERSION}-${IOS_DEPLOYMENT_TARGET}-${DEPS_CACHE_VERSION}-${{ hashFiles('scripts/build-ffmpeg-ios.sh') }}" >> "$GITHUB_OUTPUT"
+      - id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ffmpeg-ios
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+      - name: Build FFmpeg
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          brew install nasm pkg-config || true
+          scripts/build-ffmpeg-ios.sh
+      - uses: actions/cache/save@v4
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: build/ffmpeg-ios
+          key: ${{ steps.key.outputs.key }}
+
+  build:
+    name: Ips3 (core + app)
+    needs: [llvm, ffmpeg]
+    runs-on: macos-15
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: scripts/ci/select-xcode.sh
+      - name: Install tools
+        run: brew install ninja ccache xcodegen || true
+      - name: Fetch sources
+        run: scripts/fetch-submodules.sh
+      - uses: actions/cache/restore@v4
+        with:
+          path: build/llvm-ios
+          key: ${{ needs.llvm.outputs.key }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: build/ffmpeg-ios
+          key: ${{ needs.ffmpeg.outputs.key }}
+          fail-on-cache-miss: true
+      - name: MoltenVK
+        run: scripts/fetch-moltenvk.sh
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-core-${{ github.sha }}
+          restore-keys: ccache-core-
+      - name: Build core
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
+          CCACHE_MAXSIZE: 4G
+          CCACHE_SLOPPINESS: time_macros,include_file_mtime,include_file_ctime
+        run: |
+          ccache -z || true
+          scripts/build-core.sh 2>&1 | tee build-core.log
+          ccache -s || true
+      - name: Core build errors
+        if: failure()
+        run: grep -E "error:|FAILED:|fatal error" build-core.log | head -n 300 || true
+      - name: Build app and package IPA
+        if: hashFiles('app/project.yml') != ''
+        run: scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('build/Ips3.ipa') != ''
+        with:
+          name: Ips3-ipa
+          path: build/Ips3.ipa
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: build-core.log
+          if-no-files-found: ignore
