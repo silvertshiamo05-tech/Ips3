@@ -14,6 +14,7 @@
 #include <kernel/memory.h>
 #include <kernel/xam.h>
 #include <kernel/xdm.h>
+#include <ips3_gpu.h>
 #include <cpu/guest_thread.h>
 
 #include <unordered_set>
@@ -278,6 +279,9 @@ namespace
 			offset += file->discEntry->offset;
 		}
 
+		// The GPU may be watching the destination for CPU writes; a system call writing a
+		// watched (read-only) page would fail instead of faulting.
+		ips3_memory_will_write(g_memory.MapVirtual(buffer), uint32_t(length));
 		return pread(file->fd, buffer, length, off_t(offset));
 	}
 

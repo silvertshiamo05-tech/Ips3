@@ -28,7 +28,7 @@ add_executable(bayonetta
     src/apu/audio.cpp
     src/hid/hid.cpp
     src/cpu/guest_thread.cpp
-    src/gpu/command_processor.cpp
+    src/gpu/interrupts.cpp
     src/kernel/heap.cpp
     src/kernel/imports.cpp
     src/kernel/imports_bayonetta.cpp
@@ -55,7 +55,9 @@ target_include_directories(bayonetta PRIVATE
     ${XENONRECOMP_DIR}/thirdparty/fmt/include)
 
 find_package(Threads REQUIRED)
+
+include(xenia_gpu.cmake)
 # UnleashedRecomp's sources assume stdafx.h is always included first (it is their PCH).
 target_compile_options(bayonetta PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/src/stdafx.h>")
-target_link_libraries(bayonetta PRIVATE BayonettaPPC XenonUtils fmt::fmt xxHash::xxhash Threads::Threads)
+target_link_libraries(bayonetta PRIVATE BayonettaPPC XeniaGpu XenonUtils fmt::fmt xxHash::xxhash Threads::Threads)

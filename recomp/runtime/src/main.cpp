@@ -19,6 +19,7 @@
 #include <kernel/xam.h>
 #include <kernel/xdm.h>
 #include <kernel/io/disc_image.h>
+#include <ips3_gpu.h>
 
 #include <image.h>
 
@@ -161,6 +162,12 @@ int main(int argc, char** argv)
 
     // Guest allocations (the loader's included) come from the heaps.
     g_userHeap.Init();
+
+    if (!ips3_gpu_start(g_memory.base))
+    {
+        fmt::println(stderr, "Could not start the Vulkan GPU");
+        return 1;
+    }
 
     const auto xex = ReadExecutable(xexPath);
     if (xex.empty())

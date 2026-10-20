@@ -1,8 +1,8 @@
-// Ips3: the kernel's video functions (Vd*), backed by the headless command processor. Behaviour
-// and structure layouts follow Xenia's xboxkrnl_video.
+// Ips3: the kernel's video functions (Vd*), backed by Xenia's Vulkan GPU (xenia_shim/gpu_host.cc).
+// Behaviour and structure layouts follow Xenia's xboxkrnl_video.
 #include <stdafx.h>
 
-#include <gpu/command_processor.h>
+#include <ips3_gpu.h>
 #include <kernel/function.h>
 #include <kernel/memory.h>
 
@@ -41,19 +41,19 @@ void VdShutdownEngines()
 // void VdSetGraphicsInterruptCallback(void (*callback)(uint32_t source, void* data), void* data)
 void VdSetGraphicsInterruptCallback(uint32_t callback, uint32_t data)
 {
-	Gpu::SetInterruptCallback(callback, data);
+	ips3_gpu_set_interrupt_callback(callback, data);
 }
 
 // void VdInitializeRingBuffer(uint32_t gpuAddress, uint32_t sizeLog2)
 void VdInitializeRingBuffer(uint32_t gpuAddress, uint32_t sizeLog2)
 {
-	Gpu::InitializeRingBuffer(gpuAddress, sizeLog2);
+	ips3_gpu_initialize_ring_buffer(gpuAddress, sizeLog2);
 }
 
 // void VdEnableRingBufferRPtrWriteBack(uint32_t gpuAddress, uint32_t blockLog2)
 void VdEnableRingBufferRPtrWriteBack(uint32_t gpuAddress, uint32_t blockLog2)
 {
-	Gpu::EnableReadPointerWriteBack(gpuAddress, blockLog2);
+	ips3_gpu_enable_read_pointer_writeback(gpuAddress, blockLog2);
 }
 
 void VdSetSystemCommandBufferGpuIdentifierAddress(uint32_t)
@@ -139,19 +139,12 @@ uint32_t VdInitializeScalerCommandBuffer(uint32_t, uint32_t, uint32_t, uint32_t,
 
 // void VdSwap(uint32_t* buffer, void* fetch, void* writeback, void* sysBuffer, void* sysBuffer2,
 //     uint32_t* frontBuffer, uint32_t* format, uint32_t* colorSpace, uint32_t* width, uint32_t* height)
-// The caller reserves 64 dwords in the ring for this. They become one packet the command
-// processor counts as a presented frame.
-void VdSwap(be<uint32_t>* buffer, uint32_t fetch, uint32_t writeback, uint32_t sysBuffer, uint32_t sysBuffer2,
+// The caller reserves 64 dwords in the ring for this; they become the front buffer's fetch
+// constant and Xenia's swap packet.
+void VdSwap(uint32_t* buffer, uint32_t* fetch, uint32_t writeback, uint32_t sysBuffer, uint32_t sysBuffer2,
 	be<uint32_t>* frontBuffer, be<uint32_t>* format, be<uint32_t>* colorSpace, be<uint32_t>* width, be<uint32_t>* height)
 {
-	for (int i = 0; i < 64; i++)
-		buffer[i] = 0;
-
-	buffer[0] = 0xC0000000u | (62u << 16) | (0x64u << 8); // type 3, opcode 0x64, 63 dwords
-	buffer[1] = 0x53574150;                              // 'SWAP'
-	buffer[2] = frontBuffer ? uint32_t(*frontBuffer) : 0;
-	buffer[3] = width ? uint32_t(*width) : DISPLAY_WIDTH;
-	buffer[4] = height ? uint32_t(*height) : DISPLAY_HEIGHT;
+	ips3_gpu_write_swap(buffer, fetch, width ? uint32_t(*width) : DISPLAY_WIDTH, height ? uint32_t(*height) : DISPLAY_HEIGHT);
 }
 
 GUEST_FUNCTION_HOOK(__imp__VdInitializeEngines, VdInitializeEngines);

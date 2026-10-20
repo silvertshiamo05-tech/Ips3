@@ -75,20 +75,31 @@ Added on top of UnleashedRecomp:
 - Thread fixes: closing a thread handle no longer joins the thread (it deadlocked), suspending
   another thread no longer suspends the caller.
 
-- `gpu/command_processor.cpp`, `kernel/video.cpp`: a headless Xenos command processor. It
-  reads the PM4 ring buffer Direct3D fills (the register window at `0x7FC80000` is plain
-  memory, so it watches `CP_RB_WPTR` there), keeps the register file, executes indirect
-  buffers, waits, memory and scratch-register writes, fences and interrupts, writes the read
-  pointer back, and raises the 60 Hz vblank interrupt into the game's handler on its own
-  guest stack. Draw packets are counted, not drawn. Physical memory is the 512 MiB at
-  `0xA0000000`, so GPU addresses map back with `0xA0000000 | address`.
+- **GPU: Xenia's Xenos emulation and Vulkan backend** (BSD-3-Clause, [xenia-canary](https://github.com/xenia-canary/xenia-canary)
+  at a pinned commit, fetched by `setup.sh` with the libraries it pins; not copied into this
+  repository). It brings the PM4 command processor, the Xenos microcode to SPIR-V shader
+  translator, texture decoding and the EDRAM render target emulation. `xenia_gpu.cmake`
+  builds it unmodified against `src/xenia_shim`, which stands in for the Xenia emulator,
+  kernel, CPU and memory pieces it expects:
+  - `memory.cc`: physical memory is the runtime's 512 MiB at `0xA0000000`; CPU writes to
+    memory the GPU has copies of are caught by write-protecting those pages, as in Xenia.
+  - `gpu_host.cc`: starts the Vulkan graphics system offscreen, polls `CP_RB_WPTR` in the
+    register window (plain memory here, where Xenia traps it) and mirrors the registers the
+    CPU reads; `VdSwap` writes Xenia's swap packet. `IPS3_CAPTURE=<folder>` saves the
+    presented frame as a PNG every two seconds.
+  - `kernel.cc`: GPU host threads; interrupts run the game's handler on its own guest stack
+    (`gpu/interrupts.cpp`).
+  - Xenia's built-in shaders are compiled by `tools/build_xenia_shaders.py`.
 
-With `data00.cpk` and `data13.cpk` from the disc, the game finishes its init and runs its main
-loop headless: about 57 frames a second presented, each with ~80 draws, for as long as it is
-left running (tested for two minutes). Music and sound effects (`media/bgm`, `media/se`) are
-not on hand yet and are skipped.
+  On Linux it renders with Mesa's llvmpipe (software Vulkan); on iOS the same backend is
+  meant to run on MoltenVK.
 
-Next: drawing (Xenos shaders and draws -> Metal), XMA audio, input.
+With `data00.cpk` and `data13.cpk` from the disc, the game finishes its init, runs its main
+loop and **renders its boot logos** (Dolby Digital, CRIWARE) through Xenia's GPU, about 12
+frames a second on llvmpipe. After them the screen stays black: the logo movies
+(`media/movie`) and the core sound archive (`media/se/core.cpk`) are not on hand yet.
+
+Next: the movies and sound archives from the disc, then MoltenVK on iOS, input and XMA audio.
 
 ## Tools
 
