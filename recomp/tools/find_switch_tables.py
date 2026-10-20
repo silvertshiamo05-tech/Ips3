@@ -5,7 +5,8 @@ switch-table TOML format.
 XenonAnalyse matches a handful of fixed instruction sequences (the ones Sonic Unleashed's
 compiler emits) and misses tables whose instructions are scheduled in a different order.
 This finds every `bctr`, walks back to the bounds check that guards it
-(`cmplwi rIdx, N` + `bgt default`, or `bgtlr` when the default case returns), and then *executes* the instructions between the check
+(`cmplwi rIdx, N` + `bgt default`, `bgtlr` when the default case returns, or `ble` over a
+`b default`), and then *executes* the instructions between the check
 and the `bctr` once per case value. Whatever ends up in CTR is that case's target. That
 covers absolute tables, byte/halfword offset tables and any instruction order, without
 knowing the compiler's patterns.
@@ -100,6 +101,32 @@ def decode_bc_gt(w, addr):
     return None
 
 
+def decode_bc_le(w, addr):
+    """ble crN, target (BO=4 branch if false, BI=crN*4+1). Returns (cr, target)."""
+    if w >> 26 != 16:
+        return None
+    bo, bi = (w >> 21) & 31, (w >> 16) & 31
+    if (bo & 0b11100) == 0b00100 and bi % 4 == 1 and not w & 3:
+        return bi // 4, (addr + sext16(w & 0xFFFC)) & MASK
+    return None
+
+
+def inverted_guard(img, b_addr):
+    """`cmplwi crN, rIdx, N; ble crN, past; b default; past: <table>`: the bounds check
+    branches over a jump to the default case. Returns (cmp_addr, cmp, (b_addr, (cr, default)))."""
+    w = img.word(b_addr)
+    if w >> 26 != 18 or w & 3:
+        return None
+    ble = decode_bc_le(img.word(b_addr - 4), b_addr - 4)
+    c = decode_cmplwi(img.word(b_addr - 8))
+    if not ble or not c or ble[1] != b_addr + 4 or ble[0] != c[0]:
+        return None
+    target = w & 0x03FFFFFC
+    if target & 0x02000000:
+        target -= 0x04000000
+    return b_addr - 8, c, (b_addr, (c[0], (b_addr + target) & MASK))
+
+
 def decode_bclr_gt(w):
     """bgtlr crN (bclr, BO=12, BI=crN*4+1, no link): the default case returns. Returns (cr, 0)."""
     if w >> 26 != 19 or (w >> 1) & 0x3FF != 16 or w & 1:
@@ -110,9 +137,11 @@ def decode_bclr_gt(w):
     return None
 
 
-def execute(img, start, end, idx_reg, idx):
-    """Runs the instructions in [start, end) with only idx_reg known. Returns CTR."""
+def execute(img, start, end, idx_reg, idx, aliases=()):
+    """Runs the instructions in [start, end) with only idx_reg (and registers holding a copy
+    of it) known. Returns CTR."""
     regs = {idx_reg: idx}
+    regs.update({r: idx for r in aliases})
     ctr = None
 
     def g(r):
@@ -229,7 +258,10 @@ def find_tables(img, max_back=24, max_cases=8192):
         for k in range(1, max_back + 1):
             a = addr - 4 * k
             w = img.word(a)
-            if is_bctr(w) or w == 0x4E800020 or (w >> 26 == 18):  # previous bctr/blr/b: left the block
+            if w >> 26 == 18:
+                found = inverted_guard(img, a)
+                break
+            if is_bctr(w) or w == 0x4E800020:  # previous bctr/blr: left the block
                 break
             b = decode_bc_gt(w, a) or decode_bclr_gt(w)
             if b:
@@ -255,12 +287,24 @@ def find_tables(img, max_back=24, max_cases=8192):
             continue
 
         start = bgt_addr + 4
+        # `mr rIdx, rX` just before the check: the table may be indexed through rX.
+        aliases = []
+        for a in range(cmp_addr - 4, cmp_addr - 36, -4):
+            w = img.word(a)
+            if w >> 26 == 31 and (w >> 1) & 0x3FF == 444 and (w >> 21) & 31 == (w >> 11) & 31:
+                dst, src = (w >> 16) & 31, (w >> 21) & 31
+                other = src if dst == idx_reg else dst if src == idx_reg else None
+                if other is not None and not any(writes_reg(img.word(b), other) for b in range(a + 4, addr, 4)):
+                    aliases.append(other)
+                    break
+            if writes_reg(w, idx_reg):
+                break
         if any(writes_reg(img.word(a), idx_reg) for a in range(start, addr, 4)):
             failures.append((addr, f"r{idx_reg} overwritten before bctr"))
             continue
 
         try:
-            labels = [execute(img, start, addr, idx_reg, i) for i in range(n + 1)]
+            labels = [execute(img, start, addr, idx_reg, i, aliases) for i in range(n + 1)]
         except Unknown as e:
             failures.append((addr, str(e)))
             continue
@@ -279,25 +323,47 @@ def unguarded_table(img, bctr, max_back):
         return None
     fn_lo, fn_hi = bounds
 
-    # Find mtctr <- lwzx rT, rBase, rOff, with rOff = rlwinm(rIdx, 2, ...).
+    # mtctr rS, where rS is an indexed load from the table (word entries: absolute targets)
+    # or a base plus a loaded byte/halfword offset (add rS, rBase, rLoaded).
     window = [bctr - 4 * k for k in range(max_back, 0, -1) if bctr - 4 * k >= fn_lo]
-    mtctr_src = lwzx_at = idx_reg = off_reg = None
+    idx_reg = None
+    flow = None
+    load = None
     for a in reversed(window):
         w = img.word(a)
-        if mtctr_src is None and w >> 26 == 31 and (w >> 1) & 0x3FF == 467 and ((w >> 11) & 0x3FF) == 0x120:
-            mtctr_src = (w >> 21) & 31
-        elif mtctr_src is not None and lwzx_at is None and w >> 26 == 31 and (w >> 1) & 0x3FF == 23 and (w >> 21) & 31 == mtctr_src:
-            lwzx_at, off_reg = a, (w >> 11) & 31
-        elif lwzx_at is not None and w >> 26 == 21 and (w >> 16) & 31 == off_reg and ((w >> 11) & 31) == 2:
-            idx_reg = (w >> 21) & 31
+        op, xo = w >> 26, (w >> 1) & 0x3FF
+        rd, ra, rb = (w >> 21) & 31, (w >> 16) & 31, (w >> 11) & 31
+        if flow is None:
+            if op == 31 and xo == 467 and ((w >> 11) & 0x3FF) == 0x120:
+                flow = {rd}
+            continue
+        if load is None:
+            if op == 31 and xo == 266 and rd in flow:
+                flow |= {ra, rb}
+            elif op == 31 and xo in (23, 87, 279, 343) and rd in flow:
+                load = (xo, rb)
+            continue
+        # The load's index: rlwinm rOff, rIdx, sh (sh <= 2) scales it, or it is used as is.
+        if op == 21 and ra == load[1] and rb <= 2:
+            idx_reg = rd
             break
+        if writes_reg(w, load[1]):
+            break
+    if load is not None and idx_reg is None:
+        idx_reg = load[1]
     if idx_reg is None:
         return None
 
     # Start right after the last write to the index register, so it is live and unchanged.
     start = window[0]
     for a in window:
-        if a < bctr and writes_reg(img.word(a), idx_reg):
+        w = img.word(a)
+        op, xo = w >> 26, (w >> 1) & 0x3FF
+        if a < bctr and writes_reg(w, idx_reg):
+            start = a + 4
+        # Nor across a branch, compare or padding: the preamble is the straight-line code
+        # before bctr.
+        if w == 0 or op in (10, 11, 16, 18, 19) or (op == 31 and xo in (0, 32)):
             start = a + 4
 
     labels = []

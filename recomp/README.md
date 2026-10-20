@@ -24,7 +24,7 @@ Status on the retail `default.xex` (SHA-1 `3bdd4988...`):
 | | |
 |---|---|
 | XEX decrypt/decompress | works: 13.1 MB `.text`, ~30k `.pdata` functions |
-| Jump tables | 1,127, found by `tools/find_switch_tables.py` (stock XenonAnalyse finds 1) |
+| Jump tables | 1,190, found by `tools/find_switch_tables.py` (stock XenonAnalyse finds 1) |
 | Instructions | all translated. `patches/xenonrecomp-bayonetta.patch` adds the 28 opcodes stock XenonRecomp lacked (`bdzf`/`bdzt`/`bdnzt`, update-form loads/stores, `vsel128`, `vpkswss128`, `vcfpuxws128`, `lvehx`, `eqv`, `addc`/`addme`/`subfze`, ...) and makes `bdnzf` test the CR bit it names instead of assuming `eq` |
 | Function boundaries | 0 switch cases outside their function, 0 unresolved branch targets (see below) |
 | Output | 247 MB of C++ in ~308 files; every file compiles (clang, `-fsyntax-only`) |
