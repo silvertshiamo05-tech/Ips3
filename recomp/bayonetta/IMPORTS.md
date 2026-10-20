@@ -1,110 +1,110 @@
 # Bayonetta: Xbox 360 imports to implement
 
-The 185 system functions `default.xex` imports, i.e. the runtime's to-do list. Generated from the
+The 187 system functions `default.xex` imports, i.e. the runtime's to-do list. Generated from the
 recompiler output (`private/imports.txt`); tick them off as they are implemented.
 
 ## Kernel: threads, sync, time (28)
 
-- [ ] `KeAcquireSpinLockAtRaisedIrql`
-- [ ] `KeBugCheck`
-- [ ] `KeBugCheckEx`
-- [ ] `KeDelayExecutionThread`
-- [ ] `KeEnableFpuExceptions`
-- [ ] `KeEnterCriticalRegion`
-- [ ] `KeGetCurrentProcessType`
-- [ ] `KeLeaveCriticalRegion`
-- [ ] `KeLockL2`
-- [ ] `KeQueryBasePriorityThread`
-- [ ] `KeQueryPerformanceFrequency`
-- [ ] `KeQuerySystemTime`
-- [ ] `KeReleaseSpinLockFromRaisedIrql`
-- [ ] `KeResetEvent`
-- [ ] `KeSetAffinityThread`
-- [ ] `KeSetBasePriorityThread`
-- [ ] `KeSetDisableBoostThread`
-- [ ] `KeSetEvent`
-- [ ] `KeTlsAlloc`
-- [ ] `KeTlsFree`
-- [ ] `KeTlsGetValue`
-- [ ] `KeTlsSetValue`
-- [ ] `KeUnlockL2`
-- [ ] `KeWaitForMultipleObjects`
-- [ ] `KeWaitForSingleObject`
-- [ ] `KfAcquireSpinLock`
-- [ ] `KfReleaseSpinLock`
-- [ ] `KiApcNormalRoutineNop`
+- [x] `KeAcquireSpinLockAtRaisedIrql`
+- [x] `KeBugCheck`
+- [x] `KeBugCheckEx`
+- [x] `KeDelayExecutionThread`
+- [x] `KeEnableFpuExceptions`
+- [x] `KeEnterCriticalRegion`
+- [x] `KeGetCurrentProcessType`
+- [x] `KeLeaveCriticalRegion`
+- [x] `KeLockL2`
+- [x] `KeQueryBasePriorityThread`
+- [x] `KeQueryPerformanceFrequency`
+- [x] `KeQuerySystemTime`
+- [x] `KeReleaseSpinLockFromRaisedIrql`
+- [x] `KeResetEvent`
+- [x] `KeSetAffinityThread`
+- [x] `KeSetBasePriorityThread`
+- [x] `KeSetDisableBoostThread`
+- [x] `KeSetEvent`
+- [x] `KeTlsAlloc`
+- [x] `KeTlsFree`
+- [x] `KeTlsGetValue`
+- [x] `KeTlsSetValue`
+- [x] `KeUnlockL2`
+- [x] `KeWaitForMultipleObjects`
+- [x] `KeWaitForSingleObject`
+- [x] `KfAcquireSpinLock`
+- [x] `KfReleaseSpinLock`
+- [x] `KiApcNormalRoutineNop`
 
 ## Kernel: files, memory, events (25)
 
-- [ ] `NtAllocateVirtualMemory`
-- [ ] `NtClearEvent`
-- [ ] `NtClose`
-- [ ] `NtCreateEvent`
-- [ ] `NtCreateFile`
-- [ ] `NtCreateSemaphore`
-- [ ] `NtDuplicateObject`
-- [ ] `NtFlushBuffersFile`
-- [ ] `NtFreeVirtualMemory`
-- [ ] `NtOpenFile`
-- [ ] `NtQueryDirectoryFile`
-- [ ] `NtQueryFullAttributesFile`
-- [ ] `NtQueryInformationFile`
-- [ ] `NtQueryVirtualMemory`
-- [ ] `NtQueryVolumeInformationFile`
-- [ ] `NtReadFile`
-- [ ] `NtReadFileScatter`
-- [ ] `NtReleaseSemaphore`
-- [ ] `NtResumeThread`
-- [ ] `NtSetEvent`
-- [ ] `NtSetInformationFile`
-- [ ] `NtSuspendThread`
-- [ ] `NtWaitForSingleObjectEx`
-- [ ] `NtWriteFile`
-- [ ] `NtYieldExecution`
+- [x] `NtAllocateVirtualMemory`
+- [x] `NtClearEvent`
+- [x] `NtClose`
+- [x] `NtCreateEvent`
+- [x] `NtCreateFile`
+- [x] `NtCreateSemaphore`
+- [x] `NtDuplicateObject`
+- [x] `NtFlushBuffersFile`
+- [x] `NtFreeVirtualMemory`
+- [x] `NtOpenFile`
+- [x] `NtQueryDirectoryFile`
+- [x] `NtQueryFullAttributesFile`
+- [x] `NtQueryInformationFile`
+- [x] `NtQueryVirtualMemory`
+- [x] `NtQueryVolumeInformationFile`
+- [x] `NtReadFile`
+- [x] `NtReadFileScatter`
+- [x] `NtReleaseSemaphore`
+- [x] `NtResumeThread`
+- [x] `NtSetEvent`
+- [x] `NtSetInformationFile`
+- [x] `NtSuspendThread`
+- [x] `NtWaitForSingleObjectEx`
+- [x] `NtWriteFile`
+- [x] `NtYieldExecution`
 
 ## Kernel runtime: strings, critical sections, exceptions (21)
 
-- [ ] `RtlCompareMemoryUlong`
-- [ ] `RtlCompareStringN`
-- [ ] `RtlEnterCriticalSection`
-- [ ] `RtlFillMemoryUlong`
-- [ ] `RtlFreeAnsiString`
-- [ ] `RtlImageXexHeaderField`
-- [ ] `RtlInitAnsiString`
-- [ ] `RtlInitUnicodeString`
-- [ ] `RtlInitializeCriticalSection`
-- [ ] `RtlInitializeCriticalSectionAndSpinCount`
-- [ ] `RtlLeaveCriticalSection`
-- [ ] `RtlMultiByteToUnicodeN`
-- [ ] `RtlNtStatusToDosError`
-- [ ] `RtlRaiseException`
-- [ ] `RtlTimeFieldsToTime`
-- [ ] `RtlTimeToTimeFields`
-- [ ] `RtlTryEnterCriticalSection`
-- [ ] `RtlUnicodeStringToAnsiString`
-- [ ] `RtlUnicodeToMultiByteN`
-- [ ] `RtlUnwind`
-- [ ] `RtlUpcaseUnicodeChar`
+- [x] `RtlCompareMemoryUlong`
+- [x] `RtlCompareStringN`
+- [x] `RtlEnterCriticalSection`
+- [x] `RtlFillMemoryUlong`
+- [x] `RtlFreeAnsiString`
+- [x] `RtlImageXexHeaderField`
+- [x] `RtlInitAnsiString`
+- [x] `RtlInitUnicodeString`
+- [x] `RtlInitializeCriticalSection`
+- [x] `RtlInitializeCriticalSectionAndSpinCount`
+- [x] `RtlLeaveCriticalSection`
+- [x] `RtlMultiByteToUnicodeN`
+- [x] `RtlNtStatusToDosError`
+- [x] `RtlRaiseException`
+- [x] `RtlTimeFieldsToTime`
+- [x] `RtlTimeToTimeFields`
+- [x] `RtlTryEnterCriticalSection`
+- [x] `RtlUnicodeStringToAnsiString`
+- [x] `RtlUnicodeToMultiByteN`
+- [x] `RtlUnwind`
+- [x] `RtlUpcaseUnicodeChar`
 
 ## Kernel: memory (6)
 
-- [ ] `MmAllocatePhysicalMemoryEx`
-- [ ] `MmFreePhysicalMemory`
-- [ ] `MmGetPhysicalAddress`
-- [ ] `MmMapIoSpace`
-- [ ] `MmQueryAddressProtect`
-- [ ] `MmQueryStatistics`
+- [x] `MmAllocatePhysicalMemoryEx`
+- [x] `MmFreePhysicalMemory`
+- [x] `MmGetPhysicalAddress`
+- [x] `MmMapIoSpace`
+- [x] `MmQueryAddressProtect`
+- [x] `MmQueryStatistics`
 
 ## Kernel: objects (8)
 
-- [ ] `ObCreateSymbolicLink`
-- [ ] `ObDeleteSymbolicLink`
-- [ ] `ObDereferenceObject`
-- [ ] `ObIsTitleObject`
-- [ ] `ObLookupThreadByThreadId`
-- [ ] `ObOpenObjectByPointer`
-- [ ] `ObReferenceObject`
-- [ ] `ObReferenceObjectByHandle`
+- [x] `ObCreateSymbolicLink`
+- [x] `ObDeleteSymbolicLink`
+- [x] `ObDereferenceObject`
+- [x] `ObIsTitleObject`
+- [x] `ObLookupThreadByThreadId`
+- [x] `ObOpenObjectByPointer`
+- [x] `ObReferenceObject`
+- [x] `ObReferenceObjectByHandle`
 
 ## Kernel: I/O devices (7)
 
@@ -118,25 +118,27 @@ recompiler output (`private/imports.txt`); tick them off as they are implemented
 
 ## Kernel: pools, threads, config (6)
 
-- [ ] `ExAllocatePoolTypeWithTag`
-- [ ] `ExCreateThread`
-- [ ] `ExFreePool`
-- [ ] `ExGetXConfigSetting`
-- [ ] `ExRegisterTitleTerminateNotification`
+- [x] `ExAllocatePoolTypeWithTag`
+- [x] `ExCreateThread`
+- [x] `ExFreePool`
+- [x] `ExGetXConfigSetting`
+- [x] `ExRegisterTitleTerminateNotification`
 - [ ] `ExTerminateThread`
 
 ## Kernel: modules (3)
 
-- [ ] `XexCheckExecutablePrivilege`
-- [ ] `XexGetModuleHandle`
-- [ ] `XexGetProcedureAddress`
+- [x] `XexCheckExecutablePrivilege`
+- [x] `XexGetModuleHandle`
+- [x] `XexGetProcedureAddress`
 
-## Kernel: misc (4)
+## Kernel: misc (6)
 
-- [ ] `DbgBreakPoint`
-- [ ] `DbgPrint`
-- [ ] `HalReturnToFirmware`
-- [ ] `sprintf`
+- [x] `DbgBreakPoint`
+- [x] `DbgPrint`
+- [x] `HalReturnToFirmware`
+- [x] `sprintf`
+- [x] `_snprintf`
+- [x] `_vsnprintf`
 
 ## Video (Xenos GPU display/ring buffer) -> Metal (20)
 
@@ -150,10 +152,10 @@ recompiler output (`private/imports.txt`); tick them off as they are implemented
 - [ ] `VdInitializeRingBuffer`
 - [ ] `VdInitializeScalerCommandBuffer`
 - [ ] `VdIsHSIOTrainingSucceeded`
-- [ ] `VdPersistDisplay`
+- [x] `VdPersistDisplay`
 - [ ] `VdQueryVideoFlags`
-- [ ] `VdQueryVideoMode`
-- [ ] `VdRetrainEDRAM`
+- [x] `VdQueryVideoMode`
+- [x] `VdRetrainEDRAM`
 - [ ] `VdRetrainEDRAMWorker`
 - [ ] `VdSetDisplayMode`
 - [ ] `VdSetGraphicsInterruptCallback`
@@ -163,71 +165,71 @@ recompiler output (`private/imports.txt`); tick them off as they are implemented
 
 ## Audio (XAudio render driver, XMA decoder) (7)
 
-- [ ] `XAudioGetSpeakerConfig`
+- [x] `XAudioGetSpeakerConfig`
 - [ ] `XAudioGetVoiceCategoryVolume`
-- [ ] `XAudioRegisterRenderDriverClient`
-- [ ] `XAudioSubmitRenderDriverFrame`
-- [ ] `XAudioUnregisterRenderDriverClient`
+- [x] `XAudioRegisterRenderDriverClient`
+- [x] `XAudioSubmitRenderDriverFrame`
+- [x] `XAudioUnregisterRenderDriverClient`
 - [ ] `XMACreateContext`
 - [ ] `XMAReleaseContext`
 
 ## XAM: profiles, sign-in, achievements (9)
 
-- [ ] `XamShowGamerCardUIForXUID`
+- [x] `XamShowGamerCardUIForXUID`
 - [ ] `XamShowSigninUI`
-- [ ] `XamUserCreateAchievementEnumerator`
-- [ ] `XamUserCreateStatsEnumerator`
-- [ ] `XamUserGetName`
-- [ ] `XamUserGetSigninInfo`
-- [ ] `XamUserGetSigninState`
-- [ ] `XamUserGetXUID`
-- [ ] `XamUserReadProfileSettings`
+- [x] `XamUserCreateAchievementEnumerator`
+- [x] `XamUserCreateStatsEnumerator`
+- [x] `XamUserGetName`
+- [x] `XamUserGetSigninInfo`
+- [x] `XamUserGetSigninState`
+- [x] `XamUserGetXUID`
+- [x] `XamUserReadProfileSettings`
 
 ## XAM: content/saves (STFS) (8)
 
 - [ ] `StfsControlDevice`
 - [ ] `StfsCreateDevice`
-- [ ] `XamContentClose`
-- [ ] `XamContentCreateEnumerator`
-- [ ] `XamContentCreateEx`
+- [x] `XamContentClose`
+- [x] `XamContentCreateEnumerator`
+- [x] `XamContentCreateEx`
 - [ ] `XamContentDelete`
-- [ ] `XamContentGetDeviceData`
-- [ ] `XamShowDeviceSelectorUI`
+- [x] `XamContentGetDeviceData`
+- [x] `XamShowDeviceSelectorUI`
 
 ## XAM: input (4)
 
-- [ ] `XamInputGetCapabilities`
-- [ ] `XamInputGetKeystrokeEx`
-- [ ] `XamInputGetState`
-- [ ] `XamInputSetState`
+- [x] `XamInputGetCapabilities`
+- [x] `XamInputGetKeystrokeEx`
+- [x] `XamInputGetState`
+- [x] `XamInputSetState`
 
 ## XAM: system UI, notifications, loader, misc (26)
 
-- [ ] `XGetAVPack`
-- [ ] `XGetGameRegion`
-- [ ] `XGetLanguage`
-- [ ] `XGetVideoMode`
-- [ ] `XMsgInProcessCall`
-- [ ] `XMsgStartIORequest`
+- [x] `XGetAVPack`
+- [x] `XGetGameRegion`
+- [x] `XGetLanguage`
+- [x] `XGetVideoMode`
+- [x] `XMsgInProcessCall`
+- [x] `XMsgStartIORequest`
 - [ ] `XMsgStartIORequestEx`
-- [ ] `XNotifyGetNext`
-- [ ] `XamAlloc`
+- [x] `XNotifyGetNext`
+- [x] `XamAlloc`
 - [ ] `XamEnableInactivityProcessing`
-- [ ] `XamEnumerate`
-- [ ] `XamFree`
+- [x] `XamEnumerate`
+- [x] `XamFree`
 - [ ] `XamGetExecutionId`
-- [ ] `XamGetSystemVersion`
-- [ ] `XamLoaderGetLaunchData`
-- [ ] `XamLoaderGetLaunchDataSize`
+- [x] `XamGetSystemVersion`
+- [x] `XamLoaderGetLaunchData`
+- [x] `XamLoaderGetLaunchDataSize`
 - [ ] `XamLoaderLaunchTitle`
-- [ ] `XamLoaderSetLaunchData`
+- [x] `XamLoaderSetLaunchData`
 - [ ] `XamLoaderTerminateTitle`
-- [ ] `XamNotifyCreateListener`
+- [x] `XamNotifyCreateListener`
 - [ ] `XamResetInactivity`
-- [ ] `XamSessionCreateHandle`
-- [ ] `XamSessionRefObjByHandle`
+- [x] `XamSessionCreateHandle`
+- [x] `XamSessionRefObjByHandle`
 - [ ] `XamShowDirtyDiscErrorUI`
-- [ ] `XamShowMessageBoxUI`
+- [x] `XamShowMessageBoxUI`
 - [ ] `XamShowMessageBoxUIEx`
 
 ## Crypto (1)

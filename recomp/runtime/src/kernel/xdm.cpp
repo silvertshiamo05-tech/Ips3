@@ -1,6 +1,8 @@
 #include <stdafx.h>
 #include "xdm.h"
+#include <cpu/guest_thread.h>
 #include "freelist.h"
+#include "function.h"
 
 Mutex g_kernelLock;
 
@@ -34,4 +36,12 @@ bool IsKernelObject(void* obj)
 bool IsInvalidKernelObject(void* obj)
 {
     return obj == GetInvalidKernelObject();
+}
+
+void ips3::TraceCall(const char* name, const PPCContext& ctx, bool after)
+{
+    if (after)
+        fmt::println(stderr, "[trace {:5}] {} -> {:08X}", GuestThread::GetCurrentThreadId(), name, ctx.r3.u32);
+    else
+        fmt::println(stderr, "[trace {:5}] {}({:08X}, {:08X}, {:08X}, {:08X}) lr={:08X}", GuestThread::GetCurrentThreadId(), name, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, uint32_t(ctx.lr));
 }

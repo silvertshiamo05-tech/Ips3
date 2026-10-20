@@ -40,13 +40,42 @@ What it took beyond the missing instructions, all in the patch or the tools:
   `tools/leaf_function_bounds.py` gives every such target its own entry point, iterating until
   the boundaries stop changing.
 
-Not yet checked: that the generated code *runs* correctly. That needs the runtime below.
-
 `setjmp`/`longjmp` are located (`sub_8258D7B0`/`sub_8258D150`, matched by their register-buffer
 layout) and redirected to native versions: 10 and 21 call sites.
 
-Next: the runtime -- the 185 imported kernel/XAM functions listed in `bayonetta/IMPORTS.md`
-(memory, threads, files, input first) -- and then the Xenos -> Metal renderer.
+## Runtime (`runtime/`)
+
+UnleashedRecomp's kernel layer, with Sonic-specific hooks removed and the parts Bayonetta needs
+filled in. On Linux the recompiled game now boots through the C runtime, kernel and XAM setup,
+starts its 22 worker threads and audio driver, and runs its own init until it asks for game data
+(`shader.dat` from its archives). Without the disc contents it stops there; with them the next
+wall is the first GPU call.
+
+```
+bayonetta <game.iso | game folder> [save directory] [--xex default.xex]
+```
+
+The game can be the disc image itself (`kernel/io/disc_image.cpp` reads XDVDFS at any of the
+known partition offsets, XGD2 included), so nothing has to be extracted on a PC.
+`IPS3_TRACE=1` logs every kernel call.
+
+Added on top of UnleashedRecomp:
+
+- `kernel/module.cpp`: the XEX header in guest memory, the loader entry
+  (`XexExecutableModuleHandle`), and every *data* import (`KeTimeStampBundle`,
+  `XboxHardwareInfo`, ...) bound to real storage. XenonRecomp leaves those slots holding the
+  import record, so the game read garbage through them.
+- `kernel/virtual_memory.cpp`: `NtAllocate/Free/QueryVirtualMemory` (reserve/commit ranges at
+  `0x40000000`+), `MmQueryStatistics`, kernel pool.
+- `kernel/io/nt_file.cpp`: the NT file API (`NtCreateFile`, `NtReadFile`, `NtQueryDirectoryFile`,
+  ...). Bayonetta's CRT calls the kernel directly instead of the Win32-style wrappers UR hooks.
+  Paths resolve `game:`, `D:`, `\Device\Cdrom0` and `\??\` links, without regard to case.
+- `kernel/rtl.cpp`, `kernel/crt.cpp`: time fields, strings, status codes, `sprintf` family,
+  `DbgPrint`.
+- Thread fixes: closing a thread handle no longer joins the thread (it deadlocked), suspending
+  another thread no longer suspends the caller.
+
+Next: the Xenos -> Metal renderer (`Vd*` and the GPU command stream), XMA audio, input.
 
 ## Tools
 
@@ -55,4 +84,6 @@ Next: the runtime -- the 185 imported kernel/XAM functions listed in `bayonetta/
   value, so it does not depend on the compiler's instruction order. Writes XenonRecomp's TOML.
 - `tools/leaf_function_bounds.py` – explicit `functions` entries: leaf functions cut at a jump
   table, `bdz`-chain switches, and entry points for shared tails reached from other functions.
+- `tools/make_xiso.py` – builds an XDVDFS image from a folder (optionally at the XGD2 offset) to
+  test the disc reader.
 - `patches/xenonrecomp-bayonetta.patch` – applied to the pinned XenonRecomp by `setup.sh`.

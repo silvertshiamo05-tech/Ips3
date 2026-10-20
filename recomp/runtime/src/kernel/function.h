@@ -348,8 +348,25 @@ T GuestToHostFunction(const TFunction& func, TArgs&&... argv)
     }
 }
 
+// Ips3: IPS3_TRACE=1 in the environment logs every kernel call with its first arguments and result.
+namespace ips3
+{
+    inline bool TraceEnabled()
+    {
+        static const bool enabled = getenv("IPS3_TRACE") != nullptr;
+        return enabled;
+    }
+
+    void TraceCall(const char* name, const PPCContext& ctx, bool after);
+}
+
 #define GUEST_FUNCTION_HOOK(subroutine, function) \
-    PPC_FUNC(subroutine) { HostToGuestFunction<function>(ctx, base); }
+    PPC_FUNC(subroutine) \
+    { \
+        if (ips3::TraceEnabled()) ips3::TraceCall(#function, ctx, false); \
+        HostToGuestFunction<function>(ctx, base); \
+        if (ips3::TraceEnabled()) ips3::TraceCall(#function, ctx, true); \
+    }
 
 #define GUEST_FUNCTION_STUB(subroutine) \
     PPC_FUNC(subroutine) { }

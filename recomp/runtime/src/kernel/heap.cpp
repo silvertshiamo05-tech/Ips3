@@ -6,9 +6,12 @@
 constexpr size_t RESERVED_BEGIN = 0x7FEA0000;
 constexpr size_t RESERVED_END = 0xA0000000;
 
+// Ips3: NtAllocateVirtualMemory hands out 0x40000000 and up, so the user heap stops there.
+extern const uint32_t VIRTUAL_MEMORY_BEGIN;
+
 void Heap::Init()
 {
-    heap = o1heapInit(g_memory.Translate(0x20000), RESERVED_BEGIN - 0x20000);
+    heap = o1heapInit(g_memory.Translate(0x20000), VIRTUAL_MEMORY_BEGIN - 0x20000);
     physicalHeap = o1heapInit(g_memory.Translate(RESERVED_END), 0x100000000 - RESERVED_END);
 }
 
@@ -119,13 +122,5 @@ void XFreeMem(uint32_t baseAddress, uint32_t flags)
         g_userHeap.Free(g_memory.Translate(baseAddress));
 }
 
-GUEST_FUNCTION_STUB(sub_82BD7788); // HeapCreate
-GUEST_FUNCTION_STUB(sub_82BD9250); // HeapDestroy
 
-GUEST_FUNCTION_HOOK(sub_82BD7D30, RtlAllocateHeap);
-GUEST_FUNCTION_HOOK(sub_82BD8600, RtlFreeHeap);
-GUEST_FUNCTION_HOOK(sub_82BD88F0, RtlReAllocateHeap);
-GUEST_FUNCTION_HOOK(sub_82BD6FD0, RtlSizeHeap);
 
-GUEST_FUNCTION_HOOK(sub_831CC9C8, XAllocMem);
-GUEST_FUNCTION_HOOK(sub_831CCA60, XFreeMem);

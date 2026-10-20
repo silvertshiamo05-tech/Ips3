@@ -176,49 +176,18 @@ uint32_t GuestTimeoutToMilliseconds(be<int64_t>* timeout)
     return timeout ? (*timeout * -1) / 10000 : INFINITE;
 }
 
-void VdHSIOCalibrationLock()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void KeCertMonitorData()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void XexExecutableModuleHandle()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void ExLoadedCommandLine()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void KeDebugMonitorData()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void ExThreadObjectType()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void KeTimeStampBundle()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void XboxHardwareInfo()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void XGetVideoMode()
+uint32_t XGetVideoMode()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t XGetGameRegion()
@@ -244,9 +213,10 @@ uint32_t XamGetSystemVersion()
     return 0;
 }
 
-void XamContentDelete()
+uint32_t XamContentDelete()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t XamContentGetCreator(uint32_t userIndex, const XCONTENT_DATA* contentData, be<uint32_t>* isCreator, be<uint64_t>* xuid, XXOVERLAPPED* overlapped)
@@ -279,9 +249,10 @@ uint32_t XamUserGetSigninInfo(uint32_t userIndex, uint32_t flags, XUSER_SIGNIN_I
     return 0x00000525; // ERROR_NO_SUCH_USER
 }
 
-void XamShowSigninUI()
+uint32_t XamShowSigninUI()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t XamShowDeviceSelectorUI
@@ -300,24 +271,28 @@ uint32_t XamShowDeviceSelectorUI
     return 0;
 }
 
-void XamShowDirtyDiscErrorUI()
+uint32_t XamShowDirtyDiscErrorUI()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XamEnableInactivityProcessing()
+uint32_t XamEnableInactivityProcessing()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XamResetInactivity()
+uint32_t XamResetInactivity()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XamShowMessageBoxUIEx()
+uint32_t XamShowMessageBoxUIEx()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t XGetLanguage()
@@ -330,25 +305,24 @@ uint32_t XGetAVPack()
     return 0;
 }
 
-void XamLoaderTerminateTitle()
+uint32_t XamLoaderTerminateTitle()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XamGetExecutionId()
+uint32_t XamGetExecutionId()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XamLoaderLaunchTitle()
+uint32_t XamLoaderLaunchTitle()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NtOpenFile()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 void RtlInitAnsiString(XANSI_STRING* destination, char* source)
 {
@@ -358,29 +332,29 @@ void RtlInitAnsiString(XANSI_STRING* destination, char* source)
     destination->Buffer = source;
 }
 
-uint32_t NtCreateFile
-(
-    be<uint32_t>* FileHandle,
-    uint32_t DesiredAccess,
-    XOBJECT_ATTRIBUTES* Attributes,
-    XIO_STATUS_BLOCK* IoStatusBlock,
-    uint64_t* AllocationSize,
-    uint32_t FileAttributes,
-    uint32_t ShareAccess,
-    uint32_t CreateDisposition,
-    uint32_t CreateOptions
-)
-{
-    return 0;
-}
+
+bool ReleaseDuplicatedHandle(uint32_t handle);
 
 uint32_t NtClose(uint32_t handle)
 {
     if (handle == GUEST_INVALID_HANDLE_VALUE)
         return 0xFFFFFFFF;
 
+    // Ips3: pseudo-handles are not objects, and a handle NtDuplicateObject handed out again stays
+    // alive until its last close.
+    if (handle == CURRENT_THREAD_HANDLE)
+        return 0;
+
     if (IsKernelObject(handle))
     {
+        if (ReleaseDuplicatedHandle(handle))
+            return 0;
+
+        // Closing a thread handle never waits for the thread, but destroying the object would
+        // join it. Thread objects stay allocated instead.
+        if (dynamic_cast<GuestThreadHandle*>(GetKernelObject(handle)) != nullptr)
+            return 0;
+
         DestroyKernelObject(handle);
         return 0;
     }
@@ -391,10 +365,6 @@ uint32_t NtClose(uint32_t handle)
     }
 }
 
-void NtSetInformationFile()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 uint32_t FscSetCacheElementCount()
 {
@@ -418,14 +388,11 @@ uint32_t NtWaitForSingleObjectEx(uint32_t Handle, uint32_t WaitMode, uint32_t Al
     return STATUS_TIMEOUT;
 }
 
-void NtWriteFile()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void vsprintf_x()
+uint32_t vsprintf_x()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t ExGetXConfigSetting(uint16_t Category, uint16_t Setting, void* Buffer, uint16_t SizeOfBuffer, be<uint32_t>* RequiredSize)
@@ -495,15 +462,7 @@ uint32_t ExGetXConfigSetting(uint16_t Category, uint16_t Setting, void* Buffer, 
     return 0;
 }
 
-void NtQueryVirtualMemory()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void MmQueryStatistics()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 uint32_t NtCreateEvent(be<uint32_t>* handle, void* objAttributes, uint32_t eventType, uint32_t initialState)
 {
@@ -516,29 +475,19 @@ uint32_t XexCheckExecutablePrivilege()
     return 0;
 }
 
-void DbgPrint()
+
+uint32_t __C_specific_handler_x()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void __C_specific_handler_x()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void RtlNtStatusToDosError()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void XexGetProcedureAddress()
+uint32_t XexGetModuleSection()
 {
     LOG_UTILITY("!!! STUB !!!");
-}
-
-void XexGetModuleSection()
-{
-    LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t RtlUnicodeToMultiByteN(char* MultiByteString, uint32_t MaxBytesInMultiByteString, be<uint32_t>* BytesInMultiByteString, const be<uint16_t>* UnicodeString, uint32_t BytesInUnicodeString)
@@ -581,55 +530,15 @@ uint32_t KeDelayExecutionThread(uint32_t WaitMode, bool Alertable, be<int64_t>* 
     return STATUS_SUCCESS;
 }
 
-void ExFreePool()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void NtQueryInformationFile()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void NtQueryVolumeInformationFile()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void NtQueryDirectoryFile()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void NtReadFileScatter()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void NtReadFile()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void NtDuplicateObject()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void NtAllocateVirtualMemory()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void NtFreeVirtualMemory()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void ObDereferenceObject()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 void KeSetBasePriorityThread(GuestThreadHandle* hThread, int priority)
 {
@@ -653,17 +562,20 @@ uint32_t ObReferenceObjectByHandle(uint32_t handle, uint32_t objectType, be<uint
     return 0;
 }
 
-void KeQueryBasePriorityThread()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-uint32_t NtSuspendThread(GuestThreadHandle* hThread, uint32_t* suspendCount)
+uint32_t NtSuspendThread(GuestThreadHandle* hThread, be<uint32_t>* suspendCount)
 {
-    assert(hThread != GetKernelObject(CURRENT_THREAD_HANDLE) && hThread->GetThreadId() == GuestThread::GetCurrentThreadId());
+    if (suspendCount)
+        *suspendCount = 0;
 
-    hThread->suspended = true;
-    hThread->suspended.wait(true);
+    // Ips3: a host thread cannot be stopped from outside at an arbitrary point. Suspending
+    // another thread is accepted and does nothing (titles do it around priority and affinity
+    // changes); a thread suspending itself waits for the resume.
+    if (hThread == GetKernelObject(CURRENT_THREAD_HANDLE) || hThread->GetThreadId() == GuestThread::GetCurrentThreadId())
+    {
+        hThread->suspended = true;
+        hThread->suspended.wait(true);
+    }
 
     return S_OK;
 }
@@ -709,20 +621,8 @@ void RtlEnterCriticalSection(XRTL_CRITICAL_SECTION* cs)
     }
 }
 
-void RtlImageXexHeaderField()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void HalReturnToFirmware()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void RtlFillMemoryUlong()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 void KeBugCheckEx()
 {
@@ -734,10 +634,6 @@ uint32_t KeGetCurrentProcessType()
     return 1;
 }
 
-void RtlCompareMemoryUlong()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 uint32_t RtlInitializeCriticalSection(XRTL_CRITICAL_SECTION* cs)
 {
@@ -749,10 +645,6 @@ uint32_t RtlInitializeCriticalSection(XRTL_CRITICAL_SECTION* cs)
     return 0;
 }
 
-void RtlRaiseException_x()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 void KfReleaseSpinLock(uint32_t* spinLock)
 {
@@ -791,14 +683,16 @@ bool VdPersistDisplay(uint32_t a1, uint32_t* a2)
     return false;
 }
 
-void VdSwap()
+uint32_t VdSwap()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void VdGetSystemCommandBuffer()
+uint32_t VdGetSystemCommandBuffer()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 void KeReleaseSpinLockFromRaisedIrql(uint32_t* spinLock)
@@ -826,14 +720,16 @@ uint32_t KiApcNormalRoutineNop()
     return 0;
 }
 
-void VdEnableRingBufferRPtrWriteBack()
+uint32_t VdEnableRingBufferRPtrWriteBack()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void VdInitializeRingBuffer()
+uint32_t VdInitializeRingBuffer()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t MmGetPhysicalAddress(uint32_t address)
@@ -842,29 +738,29 @@ uint32_t MmGetPhysicalAddress(uint32_t address)
     return address;
 }
 
-void VdSetSystemCommandBufferGpuIdentifierAddress()
+uint32_t VdSetSystemCommandBufferGpuIdentifierAddress()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void _vsnprintf_x()
+uint32_t _vsnprintf_x()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void sprintf_x()
+uint32_t sprintf_x()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void ExRegisterTitleTerminateNotification()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void VdShutdownEngines()
+uint32_t VdShutdownEngines()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 void VdQueryVideoMode(XVIDEO_MODE* vm)
@@ -881,70 +777,72 @@ void VdQueryVideoMode(XVIDEO_MODE* vm)
     vm->Unknown01 = 0x01;
 }
 
-void VdGetCurrentDisplayInformation()
+uint32_t VdGetCurrentDisplayInformation()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void VdSetDisplayMode()
+uint32_t VdSetDisplayMode()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void VdSetGraphicsInterruptCallback()
+uint32_t VdSetGraphicsInterruptCallback()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void VdInitializeEngines()
+uint32_t VdInitializeEngines()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void VdIsHSIOTrainingSucceeded()
+uint32_t VdIsHSIOTrainingSucceeded()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void VdGetCurrentDisplayGamma()
+uint32_t VdGetCurrentDisplayGamma()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void VdQueryVideoFlags()
+uint32_t VdQueryVideoFlags()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void VdCallGraphicsNotificationRoutines()
+uint32_t VdCallGraphicsNotificationRoutines()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void VdInitializeScalerCommandBuffer()
+uint32_t VdInitializeScalerCommandBuffer()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void KeLeaveCriticalRegion()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 uint32_t VdRetrainEDRAM()
 {
     return 0;
 }
 
-void VdRetrainEDRAMWorker()
+uint32_t VdRetrainEDRAMWorker()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void KeEnterCriticalRegion()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 uint32_t MmAllocatePhysicalMemoryEx
 (
@@ -960,24 +858,17 @@ uint32_t MmAllocatePhysicalMemoryEx
     return g_memory.MapVirtual(g_userHeap.AllocPhysical(size, alignment));
 }
 
-void ObDeleteSymbolicLink()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void ObCreateSymbolicLink()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 uint32_t MmQueryAddressProtect(uint32_t guestAddress)
 {
     return PAGE_READWRITE;
 }
 
-void VdEnableDisableClockGating()
+uint32_t VdEnableDisableClockGating()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 void KeBugCheck()
@@ -985,15 +876,7 @@ void KeBugCheck()
     __builtin_debugtrap();
 }
 
-void KeLockL2()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void KeUnlockL2()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 bool KeSetEvent(XKEVENT* pEvent, uint32_t Increment, bool Wait)
 {
@@ -1118,85 +1001,96 @@ void XamUserReadProfileSettings
     }
 }
 
-void NetDll_WSAStartup()
+uint32_t NetDll_WSAStartup()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_WSACleanup()
+uint32_t NetDll_WSACleanup()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_socket()
+uint32_t NetDll_socket()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_closesocket()
+uint32_t NetDll_closesocket()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_setsockopt()
+uint32_t NetDll_setsockopt()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_bind()
+uint32_t NetDll_bind()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_connect()
+uint32_t NetDll_connect()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_listen()
+uint32_t NetDll_listen()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_accept()
+uint32_t NetDll_accept()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_select()
+uint32_t NetDll_select()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_recv()
+uint32_t NetDll_recv()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_send()
+uint32_t NetDll_send()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll_inet_addr()
+uint32_t NetDll_inet_addr()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void NetDll___WSAFDIsSet()
+uint32_t NetDll___WSAFDIsSet()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XMsgStartIORequestEx()
+uint32_t XMsgStartIORequestEx()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XexGetModuleHandle()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 bool RtlTryEnterCriticalSection(XRTL_CRITICAL_SECTION* cs)
 {
@@ -1224,65 +1118,62 @@ void RtlInitializeCriticalSectionAndSpinCount(XRTL_CRITICAL_SECTION* cs, uint32_
     cs->OwningThread = 0;
 }
 
-void _vswprintf_x()
+uint32_t _vswprintf_x()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void _vscwprintf_x()
+uint32_t _vscwprintf_x()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void _swprintf_x()
+uint32_t _swprintf_x()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void _snwprintf_x()
+uint32_t _snwprintf_x()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XeCryptBnQwBeSigVerify()
+uint32_t XeCryptBnQwBeSigVerify()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XeKeysGetKey()
+uint32_t XeKeysGetKey()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XeCryptRotSumSha()
+uint32_t XeCryptRotSumSha()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XeCryptSha()
+uint32_t XeCryptSha()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void KeEnableFpuExceptions()
+
+
+uint32_t RtlCaptureContext_x()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void RtlUnwind_x()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
-void RtlCaptureContext_x()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
-void NtQueryFullAttributesFile()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 uint32_t RtlMultiByteToUnicodeN(be<uint16_t>* UnicodeString, uint32_t MaxBytesInUnicodeString, be<uint32_t>* BytesInUnicodeString, const char* MultiByteString, uint32_t BytesInMultiByteString)
 {
@@ -1297,14 +1188,11 @@ uint32_t RtlMultiByteToUnicodeN(be<uint16_t>* UnicodeString, uint32_t MaxBytesIn
     return STATUS_SUCCESS;
 }
 
-void DbgBreakPoint()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void MmQueryAllocationSize()
+uint32_t MmQueryAllocationSize()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t NtClearEvent(Event* handle, uint32_t* previousState)
@@ -1346,35 +1234,31 @@ uint32_t NtReleaseSemaphore(Semaphore* Handle, uint32_t ReleaseCount, int32_t* P
     return STATUS_SUCCESS;
 }
 
-void NtWaitForMultipleObjectsEx()
+uint32_t NtWaitForMultipleObjectsEx()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void RtlCompareStringN()
+
+uint32_t _snprintf_x()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void _snprintf_x()
+uint32_t StfsControlDevice()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void StfsControlDevice()
+uint32_t StfsCreateDevice()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void StfsCreateDevice()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
-void NtFlushBuffersFile()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
 void KeQuerySystemTime(be<uint64_t>* time)
 {
@@ -1389,29 +1273,14 @@ void KeQuerySystemTime(be<uint64_t>* time)
     *time = currentTime100ns;
 }
 
-void RtlTimeToTimeFields()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void RtlFreeAnsiString()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void RtlUnicodeStringToAnsiString()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void RtlInitUnicodeString()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
 
-void ExTerminateThread()
+uint32_t ExTerminateThread()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t ExCreateThread(be<uint32_t>* handle, uint32_t stackSize, be<uint32_t>* threadId, uint32_t xApiThreadStartup, uint32_t startAddress, uint32_t startContext, uint32_t creationFlags)
@@ -1429,74 +1298,63 @@ uint32_t ExCreateThread(be<uint32_t>* handle, uint32_t stackSize, be<uint32_t>* 
     return 0;
 }
 
-void IoInvalidDeviceRequest()
+uint32_t IoInvalidDeviceRequest()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void ObReferenceObject()
+
+uint32_t IoCreateDevice()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void IoCreateDevice()
+uint32_t IoDeleteDevice()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void IoDeleteDevice()
+
+
+uint32_t IoCompleteRequest()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void ExAllocatePoolTypeWithTag()
+
+
+uint32_t IoCheckShareAccess()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void RtlTimeFieldsToTime()
+uint32_t IoSetShareAccess()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void IoCompleteRequest()
+uint32_t IoRemoveShareAccess()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void RtlUpcaseUnicodeChar()
+uint32_t NetDll_XNetStartup()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void ObIsTitleObject()
+uint32_t NetDll_XNetGetTitleXnAddr()
 {
     LOG_UTILITY("!!! STUB !!!");
-}
-
-void IoCheckShareAccess()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
-void IoSetShareAccess()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
-void IoRemoveShareAccess()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
-void NetDll_XNetStartup()
-{
-    LOG_UTILITY("!!! STUB !!!");
-}
-
-void NetDll_XNetGetTitleXnAddr()
-{
-    LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t KeWaitForMultipleObjects(uint32_t Count, xpointer<XDISPATCHER_HEADER>* Objects, uint32_t WaitType, uint32_t WaitReason, uint32_t WaitMode, uint32_t Alertable, be<int64_t>* Timeout)
@@ -1552,9 +1410,10 @@ uint32_t KeReleaseSemaphore(XKSEMAPHORE* semaphore, uint32_t increment, uint32_t
     return STATUS_SUCCESS;
 }
 
-void XAudioGetVoiceCategoryVolume()
+uint32_t XAudioGetVoiceCategoryVolume()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 uint32_t XAudioGetVoiceCategoryVolumeChangeMask(uint32_t Driver, be<uint32_t>* Mask)
@@ -1581,14 +1440,16 @@ void KeInitializeSemaphore(XKSEMAPHORE* semaphore, uint32_t count, uint32_t limi
     auto* object = QueryKernelObject<Semaphore>(semaphore->Header);
 }
 
-void XMAReleaseContext()
+uint32_t XMAReleaseContext()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
-void XMACreateContext()
+uint32_t XMACreateContext()
 {
     LOG_UTILITY("!!! STUB !!!");
+    return 0;
 }
 
 // uint32_t XAudioRegisterRenderDriverClient(be<uint32_t>* callback, be<uint32_t>* driver)
@@ -1640,51 +1501,26 @@ GUEST_FUNCTION_HOOK(__imp__XGetAVPack, XGetAVPack);
 GUEST_FUNCTION_HOOK(__imp__XamLoaderTerminateTitle, XamLoaderTerminateTitle);
 GUEST_FUNCTION_HOOK(__imp__XamGetExecutionId, XamGetExecutionId);
 GUEST_FUNCTION_HOOK(__imp__XamLoaderLaunchTitle, XamLoaderLaunchTitle);
-GUEST_FUNCTION_HOOK(__imp__NtOpenFile, NtOpenFile);
 GUEST_FUNCTION_HOOK(__imp__RtlInitAnsiString, RtlInitAnsiString);
-GUEST_FUNCTION_HOOK(__imp__NtCreateFile, NtCreateFile);
 GUEST_FUNCTION_HOOK(__imp__NtClose, NtClose);
-GUEST_FUNCTION_HOOK(__imp__NtSetInformationFile, NtSetInformationFile);
 GUEST_FUNCTION_HOOK(__imp__FscSetCacheElementCount, FscSetCacheElementCount);
 GUEST_FUNCTION_HOOK(__imp__NtWaitForSingleObjectEx, NtWaitForSingleObjectEx);
-GUEST_FUNCTION_HOOK(__imp__NtWriteFile, NtWriteFile);
 GUEST_FUNCTION_HOOK(__imp__ExGetXConfigSetting, ExGetXConfigSetting);
-GUEST_FUNCTION_HOOK(__imp__NtQueryVirtualMemory, NtQueryVirtualMemory);
-GUEST_FUNCTION_HOOK(__imp__MmQueryStatistics, MmQueryStatistics);
 GUEST_FUNCTION_HOOK(__imp__NtCreateEvent, NtCreateEvent);
 GUEST_FUNCTION_HOOK(__imp__XexCheckExecutablePrivilege, XexCheckExecutablePrivilege);
-GUEST_FUNCTION_HOOK(__imp__DbgPrint, DbgPrint);
 GUEST_FUNCTION_HOOK(__imp____C_specific_handler, __C_specific_handler_x);
-GUEST_FUNCTION_HOOK(__imp__RtlNtStatusToDosError, RtlNtStatusToDosError);
-GUEST_FUNCTION_HOOK(__imp__XexGetProcedureAddress, XexGetProcedureAddress);
 GUEST_FUNCTION_HOOK(__imp__XexGetModuleSection, XexGetModuleSection);
 GUEST_FUNCTION_HOOK(__imp__RtlUnicodeToMultiByteN, RtlUnicodeToMultiByteN);
 GUEST_FUNCTION_HOOK(__imp__KeDelayExecutionThread, KeDelayExecutionThread);
-GUEST_FUNCTION_HOOK(__imp__ExFreePool, ExFreePool);
-GUEST_FUNCTION_HOOK(__imp__NtQueryInformationFile, NtQueryInformationFile);
-GUEST_FUNCTION_HOOK(__imp__NtQueryVolumeInformationFile, NtQueryVolumeInformationFile);
-GUEST_FUNCTION_HOOK(__imp__NtQueryDirectoryFile, NtQueryDirectoryFile);
-GUEST_FUNCTION_HOOK(__imp__NtReadFileScatter, NtReadFileScatter);
-GUEST_FUNCTION_HOOK(__imp__NtReadFile, NtReadFile);
-GUEST_FUNCTION_HOOK(__imp__NtDuplicateObject, NtDuplicateObject);
-GUEST_FUNCTION_HOOK(__imp__NtAllocateVirtualMemory, NtAllocateVirtualMemory);
-GUEST_FUNCTION_HOOK(__imp__NtFreeVirtualMemory, NtFreeVirtualMemory);
-GUEST_FUNCTION_HOOK(__imp__ObDereferenceObject, ObDereferenceObject);
 GUEST_FUNCTION_HOOK(__imp__KeSetBasePriorityThread, KeSetBasePriorityThread);
 GUEST_FUNCTION_HOOK(__imp__ObReferenceObjectByHandle, ObReferenceObjectByHandle);
-GUEST_FUNCTION_HOOK(__imp__KeQueryBasePriorityThread, KeQueryBasePriorityThread);
 GUEST_FUNCTION_HOOK(__imp__NtSuspendThread, NtSuspendThread);
 GUEST_FUNCTION_HOOK(__imp__KeSetAffinityThread, KeSetAffinityThread);
 GUEST_FUNCTION_HOOK(__imp__RtlLeaveCriticalSection, RtlLeaveCriticalSection);
 GUEST_FUNCTION_HOOK(__imp__RtlEnterCriticalSection, RtlEnterCriticalSection);
-GUEST_FUNCTION_HOOK(__imp__RtlImageXexHeaderField, RtlImageXexHeaderField);
-GUEST_FUNCTION_HOOK(__imp__HalReturnToFirmware, HalReturnToFirmware);
-GUEST_FUNCTION_HOOK(__imp__RtlFillMemoryUlong, RtlFillMemoryUlong);
 GUEST_FUNCTION_HOOK(__imp__KeBugCheckEx, KeBugCheckEx);
 GUEST_FUNCTION_HOOK(__imp__KeGetCurrentProcessType, KeGetCurrentProcessType);
-GUEST_FUNCTION_HOOK(__imp__RtlCompareMemoryUlong, RtlCompareMemoryUlong);
 GUEST_FUNCTION_HOOK(__imp__RtlInitializeCriticalSection, RtlInitializeCriticalSection);
-GUEST_FUNCTION_HOOK(__imp__RtlRaiseException, RtlRaiseException_x);
 GUEST_FUNCTION_HOOK(__imp__KfReleaseSpinLock, KfReleaseSpinLock);
 GUEST_FUNCTION_HOOK(__imp__KfAcquireSpinLock, KfAcquireSpinLock);
 GUEST_FUNCTION_HOOK(__imp__KeQueryPerformanceFrequency, KeQueryPerformanceFrequency);
@@ -1699,7 +1535,6 @@ GUEST_FUNCTION_HOOK(__imp__VdEnableRingBufferRPtrWriteBack, VdEnableRingBufferRP
 GUEST_FUNCTION_HOOK(__imp__VdInitializeRingBuffer, VdInitializeRingBuffer);
 GUEST_FUNCTION_HOOK(__imp__MmGetPhysicalAddress, MmGetPhysicalAddress);
 GUEST_FUNCTION_HOOK(__imp__VdSetSystemCommandBufferGpuIdentifierAddress, VdSetSystemCommandBufferGpuIdentifierAddress);
-GUEST_FUNCTION_HOOK(__imp__ExRegisterTitleTerminateNotification, ExRegisterTitleTerminateNotification);
 GUEST_FUNCTION_HOOK(__imp__VdShutdownEngines, VdShutdownEngines);
 GUEST_FUNCTION_HOOK(__imp__VdQueryVideoMode, VdQueryVideoMode);
 GUEST_FUNCTION_HOOK(__imp__VdGetCurrentDisplayInformation, VdGetCurrentDisplayInformation);
@@ -1711,18 +1546,12 @@ GUEST_FUNCTION_HOOK(__imp__VdGetCurrentDisplayGamma, VdGetCurrentDisplayGamma);
 GUEST_FUNCTION_HOOK(__imp__VdQueryVideoFlags, VdQueryVideoFlags);
 GUEST_FUNCTION_HOOK(__imp__VdCallGraphicsNotificationRoutines, VdCallGraphicsNotificationRoutines);
 GUEST_FUNCTION_HOOK(__imp__VdInitializeScalerCommandBuffer, VdInitializeScalerCommandBuffer);
-GUEST_FUNCTION_HOOK(__imp__KeLeaveCriticalRegion, KeLeaveCriticalRegion);
 GUEST_FUNCTION_HOOK(__imp__VdRetrainEDRAM, VdRetrainEDRAM);
 GUEST_FUNCTION_HOOK(__imp__VdRetrainEDRAMWorker, VdRetrainEDRAMWorker);
-GUEST_FUNCTION_HOOK(__imp__KeEnterCriticalRegion, KeEnterCriticalRegion);
 GUEST_FUNCTION_HOOK(__imp__MmAllocatePhysicalMemoryEx, MmAllocatePhysicalMemoryEx);
-GUEST_FUNCTION_HOOK(__imp__ObDeleteSymbolicLink, ObDeleteSymbolicLink);
-GUEST_FUNCTION_HOOK(__imp__ObCreateSymbolicLink, ObCreateSymbolicLink);
 GUEST_FUNCTION_HOOK(__imp__MmQueryAddressProtect, MmQueryAddressProtect);
 GUEST_FUNCTION_HOOK(__imp__VdEnableDisableClockGating, VdEnableDisableClockGating);
 GUEST_FUNCTION_HOOK(__imp__KeBugCheck, KeBugCheck);
-GUEST_FUNCTION_HOOK(__imp__KeLockL2, KeLockL2);
-GUEST_FUNCTION_HOOK(__imp__KeUnlockL2, KeUnlockL2);
 GUEST_FUNCTION_HOOK(__imp__KeSetEvent, KeSetEvent);
 GUEST_FUNCTION_HOOK(__imp__KeResetEvent, KeResetEvent);
 GUEST_FUNCTION_HOOK(__imp__KeWaitForSingleObject, KeWaitForSingleObject);
@@ -1750,19 +1579,14 @@ GUEST_FUNCTION_HOOK(__imp__XMsgStartIORequestEx, XMsgStartIORequestEx);
 GUEST_FUNCTION_HOOK(__imp__XamInputGetCapabilities, XamInputGetCapabilities);
 GUEST_FUNCTION_HOOK(__imp__XamInputGetState, XamInputGetState);
 GUEST_FUNCTION_HOOK(__imp__XamInputSetState, XamInputSetState);
-GUEST_FUNCTION_HOOK(__imp__XexGetModuleHandle, XexGetModuleHandle);
 GUEST_FUNCTION_HOOK(__imp__RtlTryEnterCriticalSection, RtlTryEnterCriticalSection);
 GUEST_FUNCTION_HOOK(__imp__RtlInitializeCriticalSectionAndSpinCount, RtlInitializeCriticalSectionAndSpinCount);
 GUEST_FUNCTION_HOOK(__imp__XeCryptBnQwBeSigVerify, XeCryptBnQwBeSigVerify);
 GUEST_FUNCTION_HOOK(__imp__XeKeysGetKey, XeKeysGetKey);
 GUEST_FUNCTION_HOOK(__imp__XeCryptRotSumSha, XeCryptRotSumSha);
 GUEST_FUNCTION_HOOK(__imp__XeCryptSha, XeCryptSha);
-GUEST_FUNCTION_HOOK(__imp__KeEnableFpuExceptions, KeEnableFpuExceptions);
-GUEST_FUNCTION_HOOK(__imp__RtlUnwind, RtlUnwind_x);
 GUEST_FUNCTION_HOOK(__imp__RtlCaptureContext, RtlCaptureContext_x);
-GUEST_FUNCTION_HOOK(__imp__NtQueryFullAttributesFile, NtQueryFullAttributesFile);
 GUEST_FUNCTION_HOOK(__imp__RtlMultiByteToUnicodeN, RtlMultiByteToUnicodeN);
-GUEST_FUNCTION_HOOK(__imp__DbgBreakPoint, DbgBreakPoint);
 GUEST_FUNCTION_HOOK(__imp__MmQueryAllocationSize, MmQueryAllocationSize);
 GUEST_FUNCTION_HOOK(__imp__NtClearEvent, NtClearEvent);
 GUEST_FUNCTION_HOOK(__imp__NtResumeThread, NtResumeThread);
@@ -1770,26 +1594,15 @@ GUEST_FUNCTION_HOOK(__imp__NtSetEvent, NtSetEvent);
 GUEST_FUNCTION_HOOK(__imp__NtCreateSemaphore, NtCreateSemaphore);
 GUEST_FUNCTION_HOOK(__imp__NtReleaseSemaphore, NtReleaseSemaphore);
 GUEST_FUNCTION_HOOK(__imp__NtWaitForMultipleObjectsEx, NtWaitForMultipleObjectsEx);
-GUEST_FUNCTION_HOOK(__imp__RtlCompareStringN, RtlCompareStringN);
 GUEST_FUNCTION_HOOK(__imp__StfsControlDevice, StfsControlDevice);
 GUEST_FUNCTION_HOOK(__imp__StfsCreateDevice, StfsCreateDevice);
-GUEST_FUNCTION_HOOK(__imp__NtFlushBuffersFile, NtFlushBuffersFile);
 GUEST_FUNCTION_HOOK(__imp__KeQuerySystemTime, KeQuerySystemTime);
-GUEST_FUNCTION_HOOK(__imp__RtlTimeToTimeFields, RtlTimeToTimeFields);
-GUEST_FUNCTION_HOOK(__imp__RtlFreeAnsiString, RtlFreeAnsiString);
-GUEST_FUNCTION_HOOK(__imp__RtlUnicodeStringToAnsiString, RtlUnicodeStringToAnsiString);
-GUEST_FUNCTION_HOOK(__imp__RtlInitUnicodeString, RtlInitUnicodeString);
 GUEST_FUNCTION_HOOK(__imp__ExTerminateThread, ExTerminateThread);
 GUEST_FUNCTION_HOOK(__imp__ExCreateThread, ExCreateThread);
 GUEST_FUNCTION_HOOK(__imp__IoInvalidDeviceRequest, IoInvalidDeviceRequest);
-GUEST_FUNCTION_HOOK(__imp__ObReferenceObject, ObReferenceObject);
 GUEST_FUNCTION_HOOK(__imp__IoCreateDevice, IoCreateDevice);
 GUEST_FUNCTION_HOOK(__imp__IoDeleteDevice, IoDeleteDevice);
-GUEST_FUNCTION_HOOK(__imp__ExAllocatePoolTypeWithTag, ExAllocatePoolTypeWithTag);
-GUEST_FUNCTION_HOOK(__imp__RtlTimeFieldsToTime, RtlTimeFieldsToTime);
 GUEST_FUNCTION_HOOK(__imp__IoCompleteRequest, IoCompleteRequest);
-GUEST_FUNCTION_HOOK(__imp__RtlUpcaseUnicodeChar, RtlUpcaseUnicodeChar);
-GUEST_FUNCTION_HOOK(__imp__ObIsTitleObject, ObIsTitleObject);
 GUEST_FUNCTION_HOOK(__imp__IoCheckShareAccess, IoCheckShareAccess);
 GUEST_FUNCTION_HOOK(__imp__IoSetShareAccess, IoSetShareAccess);
 GUEST_FUNCTION_HOOK(__imp__IoRemoveShareAccess, IoRemoveShareAccess);

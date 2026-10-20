@@ -29,10 +29,16 @@ add_executable(bayonetta
     src/kernel/heap.cpp
     src/kernel/imports.cpp
     src/kernel/imports_bayonetta.cpp
+    src/kernel/crt.cpp
     src/kernel/memory.cpp
+    src/kernel/module.cpp
+    src/kernel/rtl.cpp
+    src/kernel/virtual_memory.cpp
     src/kernel/xam.cpp
     src/kernel/xdm.cpp
     src/kernel/io/file_system.cpp
+    src/kernel/io/disc_image.cpp
+    src/kernel/io/nt_file.cpp
     thirdparty/o1heap/o1heap.c)
 
 target_include_directories(bayonetta PRIVATE
@@ -48,4 +54,4 @@ find_package(Threads REQUIRED)
 # UnleashedRecomp's sources assume stdafx.h is always included first (it is their PCH).
 target_compile_options(bayonetta PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/src/stdafx.h>")
-target_link_libraries(bayonetta PRIVATE BayonettaPPC XenonUtils fmt::fmt Threads::Threads)
+target_link_libraries(bayonetta PRIVATE BayonettaPPC XenonUtils fmt::fmt xxHash::xxhash Threads::Threads)

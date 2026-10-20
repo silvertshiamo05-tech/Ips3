@@ -333,46 +333,128 @@ uint32_t XWriteFile(FileHandle* hFile, const void* lpBuffer, uint32_t nNumberOfB
     return TRUE;
 }
 
-std::filesystem::path FileSystem::ResolvePath(const std::string_view& path, bool checkForMods)
+// Ips3: device paths and case. Titles name files as "game:\\dir\\file", "D:\\..." or
+// through the object namespace ("\\??\\game:\\...", "\\Device\\Cdrom0\\..."), and the 360's
+// file system ignores case while the host's may not. Each existing component is matched without
+// regard to case; the rest of the path is kept as written.
+namespace
 {
-    thread_local std::string builtPath;
-    builtPath.clear();
-
-    size_t index = path.find(":\\");
-    if (index != std::string::npos)
+    std::string_view StripPrefix(std::string_view path, std::string_view prefix)
     {
-        // rooted folder, handle direction
-        std::string_view root = path.substr(0, index);
+        if (path.size() >= prefix.size() && strncasecmp(path.data(), prefix.data(), prefix.size()) == 0)
+            return path.substr(prefix.size());
 
-        const auto newRoot = XamGetRootPath(root);
+        return {};
+    }
 
-        if (!newRoot.empty())
+    std::string_view LookupRoot(std::string_view root)
+    {
+        auto result = XamGetRootPath(root);
+        if (result.empty())
         {
-            builtPath += newRoot;
-            builtPath += '/';
+            std::string lower(root);
+            std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return char(tolower(c)); });
+            result = XamGetRootPath(lower);
         }
-        
-        builtPath += path.substr(index + 2);
+
+        if (result.empty())
+        {
+            std::string upper(root);
+            std::transform(upper.begin(), upper.end(), upper.begin(), [](unsigned char c) { return char(toupper(c)); });
+            result = XamGetRootPath(upper);
+        }
+
+        return result;
     }
-    else
+
+    std::filesystem::path MatchCase(const std::filesystem::path& root, std::string_view relative)
     {
-        builtPath += path;
+        std::filesystem::path result = root;
+        std::error_code ec;
+        bool exists = true;
+
+        size_t start = 0;
+        while (start <= relative.size())
+        {
+            size_t end = relative.find('/', start);
+            if (end == std::string_view::npos)
+                end = relative.size();
+
+            const std::string_view component = relative.substr(start, end - start);
+            start = end + 1;
+
+            if (component.empty() || component == ".")
+                continue;
+
+            const std::filesystem::path exact = result / std::u8string_view((const char8_t*)component.data(), component.size());
+            if (!exists || std::filesystem::exists(exact, ec))
+            {
+                exists = exists && std::filesystem::exists(exact, ec);
+                result = exact;
+                continue;
+            }
+
+            bool found = false;
+            for (auto& entry : std::filesystem::directory_iterator(result, ec))
+            {
+                const std::string name = (const char*)entry.path().filename().u8string().c_str();
+                if (name.size() == component.size() && strncasecmp(name.data(), component.data(), name.size()) == 0)
+                {
+                    result = entry.path();
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                exists = false;
+                result = exact;
+            }
+        }
+
+        return result;
     }
-
-    std::replace(builtPath.begin(), builtPath.end(), '\\', '/');
-
-    return std::u8string_view((const char8_t*)builtPath.c_str());
 }
 
-GUEST_FUNCTION_HOOK(sub_82BD4668, XCreateFileA);
-GUEST_FUNCTION_HOOK(sub_82BD4600, XGetFileSizeA);
-GUEST_FUNCTION_HOOK(sub_82BD5608, XGetFileSizeExA);
-GUEST_FUNCTION_HOOK(sub_82BD4478, XReadFile);
-GUEST_FUNCTION_HOOK(sub_831CD3E8, XSetFilePointer);
-GUEST_FUNCTION_HOOK(sub_831CE888, XSetFilePointerEx);
-GUEST_FUNCTION_HOOK(sub_831CDC58, XFindFirstFileA);
-GUEST_FUNCTION_HOOK(sub_831CDC00, XFindNextFileA);
-GUEST_FUNCTION_HOOK(sub_831CDF40, XReadFileEx);
-GUEST_FUNCTION_HOOK(sub_831CD6E8, XGetFileAttributesA);
-GUEST_FUNCTION_HOOK(sub_831CE3F8, XCreateFileA);
-GUEST_FUNCTION_HOOK(sub_82BD4860, XWriteFile);
+std::filesystem::path FileSystem::ResolvePath(const std::string_view& guestPath, bool checkForMods)
+{
+    std::string_view path = guestPath;
+    if (auto rest = StripPrefix(path, "\\??\\"); !rest.empty())
+        path = rest;
+
+    std::string_view root;
+    std::string_view relative = path;
+
+    if (auto rest = StripPrefix(path, "\\Device\\Cdrom0"); !rest.empty() || path.size() == strlen("\\Device\\Cdrom0"))
+    {
+        root = "game";
+        relative = rest;
+    }
+    else if (auto rest = StripPrefix(path, "\\Device\\Harddisk0\\Partition1"); !rest.empty())
+    {
+        root = "hdd";
+        relative = rest;
+    }
+    else if (size_t index = path.find(':'); index != std::string_view::npos && path.find_first_of("\\/") > index)
+    {
+        root = path.substr(0, index);
+        relative = path.substr(index + 1);
+    }
+
+    std::string normalized(relative);
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+
+    if (root.empty())
+        return std::u8string_view((const char8_t*)normalized.c_str());
+
+    const auto hostRoot = LookupRoot(root);
+    if (hostRoot.empty())
+    {
+        // Unknown device: keep the path recognisable in logs, it will simply not be found.
+        return std::u8string_view((const char8_t*)(std::string(root) + ":/" + normalized).c_str());
+    }
+
+    return MatchCase(std::u8string_view((const char8_t*)hostRoot.data(), hostRoot.size()), normalized);
+}
+
