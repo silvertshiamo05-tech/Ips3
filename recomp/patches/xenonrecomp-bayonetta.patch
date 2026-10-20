@@ -1,0 +1,277 @@
+diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
+index fa91527..174ab16 100644
+--- a/XenonRecomp/recompiler.cpp
++++ b/XenonRecomp/recompiler.cpp
+@@ -242,7 +242,19 @@ void Recompiler::Analyse()
+             }
+             else
+             {
+-                auto& fn = functions.emplace_back(Function::Analyze(data, dataEnd - data, base));
++                // Ips3: never let an analysed function run into the next known one (.pdata,
++                // config or bl target). Otherwise the walk resumes inside that function and
++                // splits it at an arbitrary instruction -- typically every case of a switch.
++                size_t limit = dataEnd - data;
++                auto next = image.symbols.upper_bound(base);
++                while (next != image.symbols.end() && next->type != Symbol_Function)
++                    ++next;
++                if (next != image.symbols.end() && next->address > base && next->address - base < limit)
++                    limit = next->address - base;
++
++                auto& fn = functions.emplace_back(Function::Analyze(data, limit, base));
++                if (fn.size > limit)
++                    fn.size = limit;
+                 image.symbols.emplace(fmt::format("sub_{:X}", fn.base), fn.base, fn.size, Symbol_Function);
+ 
+                 base += fn.size;
+@@ -420,6 +432,25 @@ bool Recompiler::Recompile(
+             }
+         };
+ 
++    // Ips3: CTR branches (bdz/bdnz/...) were always emitted as a local goto. Compilers also use
++    // them to leave a function -- small switches as bdz chains into shared tail code -- so a
++    // target outside the function becomes a call and return, as printConditionalBranch does.
++    auto printCtrBranch = [&](const std::string& condition, size_t target)
++        {
++            if (target < fn.base || target >= fn.base + fn.size)
++            {
++                println("\tif ({}) {{", condition);
++                print("\t");
++                printFunctionCall(target);
++                println("\t\treturn;");
++                println("\t}}");
++            }
++            else
++            {
++                println("\tif ({}) goto loc_{:X};", condition, target);
++            }
++        };
++
+     auto printSetFlushMode = [&](bool enable)
+         {
+             auto newState = enable ? CSRState::VMX : CSRState::FPU;
+@@ -525,6 +556,175 @@ bool Recompiler::Recompile(
+ 
+     switch (id)
+     {
++    // ---- Added for Bayonetta (Ips3): instructions XenonRecomp did not translate yet ----
++
++    // Decrement CTR and branch on CTR plus a CR bit. BI selects the bit: field BI/4,
++    // and lt/gt/eq/so by BI%4.
++    case PPC_INST_BDZF:
++    case PPC_INST_BDZT:
++    case PPC_INST_BDNZT:
++    {
++        constexpr std::string_view fields[] = { "lt", "gt", "eq", "so" };
++        const bool zero = id == PPC_INST_BDZF || id == PPC_INST_BDZT;
++        const bool want = id == PPC_INST_BDZT || id == PPC_INST_BDNZT;
++        println("\t--{}.u64;", ctr());
++        printCtrBranch(fmt::format("{}.u32 {} 0 && {}{}.{}", ctr(), zero ? "==" : "!=",
++            want ? "" : "!", cr(insn.operands[0] / 4), fields[insn.operands[0] % 4]), insn.operands[1]);
++        break;
++    }
++
++    case PPC_INST_EQV:
++        println("\t{}.u64 = ~({}.u64 ^ {}.u64);", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
++        if (strchr(insn.opcode->name, '.'))
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
++    // Carry arithmetic. Like ADDE/SUBFE above, CA comes from the low 32 bits: the Xenon runs
++    // these titles in 32-bit mode.
++    case PPC_INST_ADDC:
++        println("\t{}.ca = {}.u32 + {}.u32 < {}.u32;", xer(), r(insn.operands[1]), r(insn.operands[2]), r(insn.operands[1]));
++        println("\t{}.u64 = {}.u64 + {}.u64;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
++        if (strchr(insn.opcode->name, '.'))
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
++    case PPC_INST_ADDME:
++        // rA + CA + 0xFFFFFFFF carries out unless both rA and CA are zero.
++        println("\t{}.u64 = {}.u64 + {}.ca - 1;", temp(), r(insn.operands[1]), xer());
++        println("\t{}.ca = ({}.u32 != 0) | {}.ca;", xer(), r(insn.operands[1]), xer());
++        println("\t{}.u64 = {}.u64;", r(insn.operands[0]), temp());
++        if (strchr(insn.opcode->name, '.'))
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
++    case PPC_INST_SUBFZE:
++        // ~rA + CA carries out only when rA is zero and CA is set.
++        println("\t{}.u64 = ~{}.u64 + {}.ca;", temp(), r(insn.operands[1]), xer());
++        println("\t{}.ca = ({}.u32 == 0) & {}.ca;", xer(), r(insn.operands[1]), xer());
++        println("\t{}.u64 = {}.u64;", r(insn.operands[0]), temp());
++        if (strchr(insn.opcode->name, '.'))
++            println("\t{}.compare<int32_t>({}.s32, 0, {});", cr(0), r(insn.operands[0]), xer());
++        break;
++
++    // Update-form loads: EA = d(rA) or rA + rB, load, then rA = EA.
++    case PPC_INST_LHZU:
++    case PPC_INST_LHAU:
++    case PPC_INST_LFSU:
++    case PPC_INST_LFDU:
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        [[fallthrough]];
++    case PPC_INST_LBZUX:
++    case PPC_INST_LHZUX:
++    case PPC_INST_LWZUX:
++    case PPC_INST_LDUX:
++    case PPC_INST_LFSUX:
++    case PPC_INST_LFDUX:
++    {
++        const bool indexed = id == PPC_INST_LBZUX || id == PPC_INST_LHZUX || id == PPC_INST_LWZUX ||
++            id == PPC_INST_LDUX || id == PPC_INST_LFSUX || id == PPC_INST_LFDUX;
++        const auto ra = indexed ? insn.operands[1] : insn.operands[2];
++
++        if (indexed)
++            println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++
++        switch (id)
++        {
++        case PPC_INST_LBZUX: println("\t{}.u64 = PPC_LOAD_U8({});", r(insn.operands[0]), ea()); break;
++        case PPC_INST_LHZU:
++        case PPC_INST_LHZUX: println("\t{}.u64 = PPC_LOAD_U16({});", r(insn.operands[0]), ea()); break;
++        case PPC_INST_LHAU: println("\t{}.s64 = int16_t(PPC_LOAD_U16({}));", r(insn.operands[0]), ea()); break;
++        case PPC_INST_LWZUX: println("\t{}.u64 = PPC_LOAD_U32({});", r(insn.operands[0]), ea()); break;
++        case PPC_INST_LDUX: println("\t{}.u64 = PPC_LOAD_U64({});", r(insn.operands[0]), ea()); break;
++        case PPC_INST_LFSU:
++        case PPC_INST_LFSUX:
++            printSetFlushMode(false);
++            println("\t{}.u32 = PPC_LOAD_U32({});", temp(), ea());
++            println("\t{}.f64 = double({}.f32);", f(insn.operands[0]), temp());
++            break;
++        default: // LFDU, LFDUX
++            printSetFlushMode(false);
++            println("\t{}.u64 = PPC_LOAD_U64({});", f(insn.operands[0]), ea());
++            break;
++        }
++
++        println("\t{}.u32 = {};", r(ra), ea());
++        break;
++    }
++
++    // Update-form stores.
++    case PPC_INST_STHU:
++    case PPC_INST_STFSU:
++    case PPC_INST_STFDU:
++        println("\t{} = {} + {}.u32;", ea(), int32_t(insn.operands[1]), r(insn.operands[2]));
++        [[fallthrough]];
++    case PPC_INST_STBUX:
++    case PPC_INST_STHUX:
++    case PPC_INST_STDUX:
++    case PPC_INST_STFSUX:
++    {
++        const bool indexed = id == PPC_INST_STBUX || id == PPC_INST_STHUX || id == PPC_INST_STDUX || id == PPC_INST_STFSUX;
++        const auto ra = indexed ? insn.operands[1] : insn.operands[2];
++
++        if (indexed)
++            println("\t{} = {}.u32 + {}.u32;", ea(), r(insn.operands[1]), r(insn.operands[2]));
++
++        switch (id)
++        {
++        case PPC_INST_STBUX: println("\tPPC_STORE_U8({}, {}.u8);", ea(), r(insn.operands[0])); break;
++        case PPC_INST_STHU:
++        case PPC_INST_STHUX: println("\tPPC_STORE_U16({}, {}.u16);", ea(), r(insn.operands[0])); break;
++        case PPC_INST_STDUX: println("\tPPC_STORE_U64({}, {}.u64);", ea(), r(insn.operands[0])); break;
++        case PPC_INST_STFSU:
++        case PPC_INST_STFSUX:
++            printSetFlushMode(false);
++            println("\t{}.f32 = float({}.f64);", temp(), f(insn.operands[0]));
++            println("\tPPC_STORE_U32({}, {}.u32);", ea(), temp());
++            break;
++        default: // STFDU
++            printSetFlushMode(false);
++            println("\tPPC_STORE_U64({}, {}.u64);", ea(), f(insn.operands[0]));
++            break;
++        }
++
++        println("\t{}.u32 = {};", r(ra), ea());
++        break;
++    }
++
++    // Element loads leave the other elements undefined, so like LVEWX this loads the whole
++    // aligned quadword.
++    case PPC_INST_LVEHX:
++        print("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_shuffle_epi8(simde_mm_load_si128((simde__m128i*)(base + ((", v(insn.operands[0]));
++        if (insn.operands[1] != 0)
++            print("{}.u32 + ", r(insn.operands[1]));
++        println("{}.u32) & ~0xF))), simde_mm_load_si128((simde__m128i*)VectorMaskL)));", r(insn.operands[2]));
++        break;
++
++    // vsel128 vD, vA, vB: the select mask is vD itself (VS128 aliases VD128).
++    case PPC_INST_VSEL128:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.u8, simde_mm_or_si128(simde_mm_andnot_si128(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8)), simde_mm_and_si128(simde_mm_load_si128((simde__m128i*){}.u8), simde_mm_load_si128((simde__m128i*){}.u8))));",
++            v(insn.operands[0]), v(insn.operands[0]), v(insn.operands[1]), v(insn.operands[0]), v(insn.operands[2]));
++        break;
++
++    // Signed words -> signed halfwords with saturation. Operands swapped like VPKSHUS, because
++    // vectors are stored element-reversed.
++    case PPC_INST_VPKSWSS:
++    case PPC_INST_VPKSWSS128:
++        println("\tsimde_mm_store_si128((simde__m128i*){}.s16, simde_mm_packs_epi32(simde_mm_load_si128((simde__m128i*){}.s32), simde_mm_load_si128((simde__m128i*){}.s32)));", v(insn.operands[0]), v(insn.operands[2]), v(insn.operands[1]));
++        break;
++
++    // Float -> unsigned word with saturation, scaled by 2^UIMM. NaN and negatives give 0.
++    case PPC_INST_VCTUXS:
++    case PPC_INST_VCFPUXWS128:
++        printSetFlushMode(true);
++        println("\tfor (size_t i = 0; i < 4; i++)");
++        println("\t{{");
++        println("\t\tconst float x = {}.f32[i] * {}.0f;", v(insn.operands[1]), 1u << insn.operands[2]);
++        println("\t\t{}.u32[i] = !(x > 0.0f) ? 0u : x >= 4294967296.0f ? 0xFFFFFFFFu : uint32_t(x);", v(insn.operands[0]));
++        println("\t}}");
++        break;
++
++    // ---- end of Ips3 additions ----
++
+     case PPC_INST_ADD:
+         println("\t{}.u64 = {}.u64 + {}.u64;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
+         if (strchr(insn.opcode->name, '.'))
+@@ -617,8 +817,17 @@ bool Recompiler::Recompile(
+                 auto label = switchTable->second.labels[i];
+                 if (label < fn.base || label >= fn.base + fn.size)
+                 {
+-                    println("\t\t// ERROR: 0x{:X}", label);
+-                    fmt::println("ERROR: Switch case at {:X} is trying to jump outside function: {:X}", base, label);
++                    // Ips3: cases can be another function's (shared) tail; enter it as a call.
++                    auto target = image.symbols.find(label);
++                    if (target != image.symbols.end() && target->address == label && target->type == Symbol_Function)
++                    {
++                        println("\t\t{}(ctx, base);", target->name);
++                    }
++                    else
++                    {
++                        println("\t\t// ERROR: 0x{:X}", label);
++                        fmt::println("ERROR: Switch case at {:X} is trying to jump outside function: {:X}", base, label);
++                    }
+                     println("\t\treturn;");
+                 }
+                 else
+@@ -649,7 +858,7 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_BDZ:
+         println("\t--{}.u64;", ctr());
+-        println("\tif ({}.u32 == 0) goto loc_{:X};", ctr(), insn.operands[0]);
++        printCtrBranch(fmt::format("{}.u32 == 0", ctr()), insn.operands[0]);
+         break;
+ 
+     case PPC_INST_BDZLR:
+@@ -659,14 +868,17 @@ bool Recompiler::Recompile(
+ 
+     case PPC_INST_BDNZ:
+         println("\t--{}.u64;", ctr());
+-        println("\tif ({}.u32 != 0) goto loc_{:X};", ctr(), insn.operands[0]);
++        printCtrBranch(fmt::format("{}.u32 != 0", ctr()), insn.operands[0]);
+         break;
+ 
+     case PPC_INST_BDNZF:
+-        // NOTE: assuming eq here as a shortcut because all the instructions in the game do that
++    {
++        // Ips3: test the CR bit BI names; this assumed eq, which only held for Sonic Unleashed.
++        constexpr std::string_view fields[] = { "lt", "gt", "eq", "so" };
+         println("\t--{}.u64;", ctr());
+-        println("\tif ({}.u32 != 0 && !{}.eq) goto loc_{:X};", ctr(), cr(insn.operands[0] / 4), insn.operands[1]);
++        printCtrBranch(fmt::format("{}.u32 != 0 && !{}.{}", ctr(), cr(insn.operands[0] / 4), fields[insn.operands[0] % 4]), insn.operands[1]);
+         break;
++    }
+ 
+     case PPC_INST_BEQ:
+         printConditionalBranch(false, "eq");

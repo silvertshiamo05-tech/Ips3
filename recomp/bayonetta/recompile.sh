@@ -34,13 +34,18 @@ recompile() {
 		"$BUILD/XenonRecomp/XenonUtils/ppc_context.h" > recomp.log 2>&1)
 }
 
-# The first pass finds function starts; the leaf-function fix-up needs them. Two more passes
-# settle the boundaries.
+# The first pass finds function starts; the boundary fix-ups need them. Each fix can expose
+# another (a new entry point reaches a new shared tail), so repeat until nothing changes.
 rm -f "$PRIVATE/functions.toml"
 recompile
-for _ in 1 2; do
+for pass in 1 2 3 4 5 6 7 8; do
+	before="$(cat "$PRIVATE/functions.toml" 2>/dev/null || true)"
 	python3 "$TOOLS/leaf_function_bounds.py" "$PRIVATE/image.bin" "$PRIVATE/switch_tables.toml" \
 		"$PRIVATE/ppc/ppc_func_mapping.cpp" "$PDATA" "$PRIVATE/functions.toml"
+	if [ "$(cat "$PRIVATE/functions.toml")" = "$before" ]; then
+		echo "function boundaries settled after $pass passes"
+		break
+	fi
 	recompile
 done
 
@@ -48,3 +53,4 @@ echo
 echo "Output: $PRIVATE/ppc ($(du -sh "$PRIVATE/ppc" | cut -f1))"
 echo "Switch sites still outside their function: $(grep -o 'Switch case at [0-9A-F]*' "$PRIVATE/recomp.log" | sort -u | wc -l)"
 echo "Unimplemented instruction occurrences:   $(grep -c 'Unrecognized instruction' "$PRIVATE/recomp.log")"
+echo "Unresolved branch targets:               $(cat "$PRIVATE"/ppc/ppc_recomp.*.cpp | grep -c '// ERROR')"

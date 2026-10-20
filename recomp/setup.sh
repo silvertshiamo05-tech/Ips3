@@ -14,6 +14,16 @@ fi
 git -C "$BUILD/XenonRecomp" checkout -q "$XR_COMMIT"
 git -C "$BUILD/XenonRecomp" submodule update --init --recursive
 
+# Our changes: the instructions Bayonetta needs, CTR branches and switch cases that leave a
+# function, and function analysis that respects known function starts.
+for patch in "$HERE"/patches/*.patch; do
+	if git -C "$BUILD/XenonRecomp" apply --reverse --check "$patch" 2>/dev/null; then
+		echo "already applied: $(basename "$patch")"
+	else
+		git -C "$BUILD/XenonRecomp" apply "$patch"
+	fi
+done
+
 XR="$BUILD/XenonRecomp"
 cmake -S "$XR" -B "$XR/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
 ninja -C "$XR/build" XenonAnalyse XenonRecomp
