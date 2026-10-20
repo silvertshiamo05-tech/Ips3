@@ -28,6 +28,8 @@ cmake -S "$CORE" -B "$OUT" -G Ninja \
 	-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
 	-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH \
 	-DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
+	`# never pick up the build host's Homebrew libraries (they are macOS binaries)` \
+	-DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local" \
 	-DCMAKE_CXX_FLAGS="${cxx_flags[*]}" \
 	-DCMAKE_OBJCXX_FLAGS="${cxx_flags[*]}" \
 	-DIPS3_IOS_DIR="$ROOT/ios/core" \
