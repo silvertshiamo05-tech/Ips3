@@ -8,8 +8,9 @@ for the places where iOS differs from Android and macOS.
 The target is the **iPad (10th generation)**: A14 Bionic, 4 GB of RAM. It is sideloaded
 through **LiveContainer** and needs **JIT**.
 
-> Status: this is a port in progress. CI builds the core and the app into `Ips3.ipa`, but
-> nothing here has been run on a device yet. Expect the first device runs to need fixes.
+> Status: CI builds the full core (RPCS3 + LLVM + FFmpeg + MoltenVK) and the app into an
+> unsigned `Ips3.ipa`. It has not been run on a device yet, so expect the first device runs
+> to need fixes; the setup screen and `Ips3.log` are there to make those reports useful.
 
 ## Why other iOS ports crash "when loading the PS3 core"
 
@@ -46,8 +47,9 @@ sideloaded directly with SideStore/AltStore instead of LiveContainer.
 
 ## Installing
 
-1. Download `Ips3-ipa` from the latest successful run of the **iOS build** workflow
-   (Actions tab), unzip it to get `Ips3.ipa`.
+1. Download `Ips3.ipa` from the newest **Ips3 nightly** prerelease on the Releases page
+   (CI publishes one for every successful build), or from the `Ips3-ipa` artifact of a run
+   of the **iOS build** workflow.
 2. Add `Ips3.ipa` to LiveContainer.
 3. Launch it with JIT. The setup screen lists anything that is still missing.
 4. Tap **+ → Import File** and pick `PS3UPDAT.PUP` to install the firmware.

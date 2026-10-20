@@ -130,6 +130,8 @@ jobs:
     name: Ips3 (core + app)
     needs: [llvm, ffmpeg]
     runs-on: macos-15
+    permissions:
+      contents: write
     concurrency:
       group: build-${{ github.ref }}
       cancel-in-progress: true
@@ -182,6 +184,15 @@ jobs:
           name: Ips3-ipa
           path: build/Ips3.ipa
           if-no-files-found: error
+      - name: Publish prerelease
+        if: github.event_name != 'pull_request' && hashFiles('build/Ips3.ipa') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="nightly-${GITHUB_REF_NAME//\//-}"
+          notes="Unsigned build of ${GITHUB_SHA::7} from ${GITHUB_REF_NAME}. Install with LiveContainer and launch with JIT; see README."
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" build/Ips3.ipa --prerelease --target "$GITHUB_SHA" --title "Ips3 nightly (${GITHUB_REF_NAME})" --notes "$notes"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

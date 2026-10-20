@@ -80,6 +80,18 @@ fi
 codesign --force --sign - --timestamp=none "$fwdir" || true
 codesign --force --sign - --timestamp=none --entitlements "$APP_DIR/Ips3.entitlements" "$app" || true
 
+log "Check the core"
+# The app resolves these with dlsym; a missing one means a broken build, not a broken device.
+exported="$(xcrun nm -gU "$fwdir/Ips3Core" | grep -c ' _ips3_' || true)"
+echo "exported ips3_* symbols: $exported"
+[ "$exported" -ge 20 ] || { echo "Ips3Core does not export its C API" >&2; exit 1; }
+# Every dependency must be an iOS system library or framework.
+if xcrun otool -L "$fwdir/Ips3Core" | tail -n +2 | grep -v -E '^[[:space:]]*(/usr/lib/|/System/Library/|@rpath/Ips3Core)'; then
+	echo "Ips3Core links something that is not part of iOS" >&2
+	exit 1
+fi
+xcrun vtool -show-build "$fwdir/Ips3Core" | grep -E "platform|minos" || true
+
 log "Package IPA"
 rm -rf "$BUILD/ipa"
 mkdir -p "$BUILD/ipa/Payload"
