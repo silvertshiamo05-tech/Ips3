@@ -40,6 +40,9 @@ GuestThreadContext::~GuestThreadContext()
     g_userHeap.Free(thread);
 }
 
+// The handle of the thread being started on this host thread, so Start can publish its PCR.
+static thread_local GuestThreadHandle* g_startingThread = nullptr;
+
 #ifdef USE_PTHREAD
 static size_t GetStackSize()
 {
@@ -72,6 +75,7 @@ static void GuestThreadFunc(GuestThreadHandle* hThread)
 {
 #endif
     hThread->suspended.wait(true);
+    g_startingThread = hThread;
     GuestThread::Start(hThread->params);
     hThread->exited = true;
     NotifyKernelWaiters();
@@ -155,6 +159,12 @@ uint32_t GuestThread::Start(const GuestThreadParams& params)
     const auto cpuNumber = procMask == 0 ? 0 : 7 - std::countl_zero(procMask);
 
     GuestThreadContext ctx(cpuNumber);
+    if (g_startingThread != nullptr)
+    {
+        g_startingThread->pcr = ctx.ppcContext.r13.u32;
+        g_startingThread = nullptr;
+    }
+
     uint32_t entry = params.function;
     if (params.startup != 0)
     {

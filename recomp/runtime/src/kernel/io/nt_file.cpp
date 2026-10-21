@@ -83,6 +83,9 @@ namespace
 		const DiscImage::Entry* discEntry = nullptr;
 		bool directory = false;
 		bool deleteOnClose = false;
+		// Opened without FILE_SYNCHRONOUS_IO_(NON)ALERT: XAPI's ReadFile/WriteFile with an
+		// OVERLAPPED expect such I/O to be reported as pending.
+		bool asynchronous = false;
 		std::mutex mutex;
 		uint64_t position = 0;
 
@@ -207,6 +210,15 @@ namespace
 
 		if (event != 0)
 			NtSetEvent(GetKernelObject<Event>(event), nullptr);
+	}
+
+	// The I/O has completed (status block and event set). On an asynchronous file, a caller with
+	// an OVERLAPPED (passed as the APC context) is told it is pending, as the kernel would, and
+	// reads the result from the OVERLAPPED; XAPI turns that into ERROR_IO_PENDING.
+	uint32_t Result(const NtFile* file, uint32_t status, uint32_t apcContext)
+	{
+		constexpr uint32_t STATUS_PENDING_ = 0x103;
+		return (file->asynchronous && apcContext != 0 && status == STATUS_SUCCESS) ? STATUS_PENDING_ : status;
 	}
 
 	// Case-insensitive match with '*' and '?'.
@@ -403,6 +415,7 @@ uint32_t NtCreateFile(be<uint32_t>* handle, uint32_t desiredAccess, XOBJECT_ATTR
 	file->guestPath = guestPath;
 	file->hostPath = hostPath;
 	file->deleteOnClose = disc == nullptr && (createOptions & FILE_DELETE_ON_CLOSE) != 0;
+	file->asynchronous = (createOptions & 0x30) == 0; // FILE_SYNCHRONOUS_IO_ALERT | _NONALERT
 
 	if (disc != nullptr)
 	{
@@ -492,7 +505,7 @@ uint32_t NtReadFile(uint32_t handle, uint32_t event, uint32_t apcRoutine, uint32
 	if (getenv("IPS3_TRACE_FILES"))
 		fmt::println(stderr, "[file] read {:08X} @{:X} +{:X} -> {:X} event {:08X} apc {:08X} status {:08X}", handle, offset, length, total, event, apcRoutine, status);
 	Complete(ioStatus, status, uint32_t(total), event);
-	return status;
+	return Result(file, status, apcContext);
 }
 
 // NTSTATUS NtReadFileScatter(HANDLE file, HANDLE event, PIO_APC_ROUTINE apcRoutine, void* apcContext,
@@ -525,7 +538,7 @@ uint32_t NtReadFileScatter(uint32_t handle, uint32_t event, uint32_t apcRoutine,
 
 	const uint32_t status = (total == 0 && length != 0) ? STATUS_END_OF_FILE : STATUS_SUCCESS;
 	Complete(ioStatus, status, uint32_t(total), event);
-	return status;
+	return Result(file, status, apcContext);
 }
 
 // NTSTATUS NtWriteFile(HANDLE file, HANDLE event, PIO_APC_ROUTINE apcRoutine, void* apcContext,
@@ -556,7 +569,7 @@ uint32_t NtWriteFile(uint32_t handle, uint32_t event, uint32_t apcRoutine, uint3
 
 	const uint32_t status = total == length ? STATUS_SUCCESS : STATUS_ACCESS_DENIED;
 	Complete(ioStatus, status, uint32_t(total), event);
-	return status;
+	return Result(file, status, apcContext);
 }
 
 // FILE_INFORMATION_CLASS values the 360 uses.

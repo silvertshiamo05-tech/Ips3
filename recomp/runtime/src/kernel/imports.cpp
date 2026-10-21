@@ -603,10 +603,37 @@ uint32_t NtSuspendThread(GuestThreadHandle* hThread, be<uint32_t>* suspendCount)
     return S_OK;
 }
 
-uint32_t KeSetAffinityThread(uint32_t Thread, uint32_t Affinity, be<uint32_t>* lpPreviousAffinity)
+// Ips3: the processor a thread reports (PCR byte 0x10C) follows its affinity. Bayonetta's job
+// workers each take the share of a batch that belongs to their processor; if two workers in a
+// pool report the same one, they process the same objects at once and crash.
+uint32_t KeSetAffinityThread(uint32_t threadHandle, uint32_t affinity, be<uint32_t>* previousAffinity)
 {
-    if (lpPreviousAffinity)
-        *lpPreviousAffinity = 2;
+    const uint8_t mask = uint8_t(affinity);
+
+    // The calling thread (pseudo-handle) has no handle object here: use its own PCR.
+    if (threadHandle == CURRENT_THREAD_HANDLE || !IsKernelObject(threadHandle))
+    {
+        auto* cpu = static_cast<uint8_t*>(g_memory.Translate(g_ppcContext->r13.u32 + 0x10C));
+        if (previousAffinity)
+            *previousAffinity = 1u << *cpu;
+        if (mask != 0)
+            *cpu = uint8_t(7 - std::countl_zero(mask));
+        return 0;
+    }
+
+    auto* thread = GetKernelObject<GuestThreadHandle>(threadHandle);
+    if (previousAffinity)
+    {
+        const uint8_t old = uint8_t(thread->params.flags >> 24);
+        *previousAffinity = old ? old : 1;
+    }
+
+    if (mask != 0)
+    {
+        thread->params.flags = (thread->params.flags & 0x00FFFFFF) | (uint32_t(mask) << 24);
+        if (const uint32_t pcr = thread->pcr.load())
+            *static_cast<uint8_t*>(g_memory.Translate(pcr + 0x10C)) = uint8_t(7 - std::countl_zero(mask));
+    }
 
     return 0;
 }

@@ -41,8 +41,24 @@ bool IsInvalidKernelObject(void* obj)
 
 void ips3::TraceCall(const char* name, const PPCContext& ctx, bool after)
 {
-    static const std::string filter = [] { std::string f = getenv("IPS3_TRACE"); return f == "1" ? std::string() : f; }();
-    if (!filter.empty() && std::string_view(name).find(filter) == std::string_view::npos)
+    // "1" traces everything; otherwise '|'-separated name fragments.
+    static const std::vector<std::string> filters = []
+    {
+        std::vector<std::string> list;
+        std::string f = getenv("IPS3_TRACE");
+        if (f == "1")
+            return list;
+        for (size_t start = 0; start <= f.size();)
+        {
+            const size_t end = std::min(f.find('|', start), f.size());
+            if (end > start)
+                list.push_back(f.substr(start, end - start));
+            start = end + 1;
+        }
+        return list;
+    }();
+    if (!filters.empty() && std::none_of(filters.begin(), filters.end(),
+        [&](const std::string& f) { return std::string_view(name).find(f) != std::string_view::npos; }))
         return;
 
     if (after)

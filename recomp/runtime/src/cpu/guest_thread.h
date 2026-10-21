@@ -44,6 +44,8 @@ struct GuestThreadHandle : KernelObject
     GuestThreadParams params;
     std::atomic<bool> suspended;
     std::atomic<bool> exited{ false };
+    // Ips3: guest address of the thread's PCR once it runs (0 before), for KeSetAffinityThread.
+    std::atomic<uint32_t> pcr{ 0 };
 #ifdef USE_PTHREAD
     pthread_t thread;
 #else
