@@ -24,7 +24,10 @@ std::filesystem::path mobile::DataPath()
 void mobile::RedirectLog()
 {
     const auto path = DataPath() / "bayonetta-log.txt";
-    freopen(path.c_str(), "w", stderr);
+    // Both streams append, so neither overwrites what the other wrote.
+    if (FILE* file = fopen(path.c_str(), "w"))
+        fclose(file);
+    freopen(path.c_str(), "a", stderr);
     freopen(path.c_str(), "a", stdout);
     setvbuf(stderr, nullptr, _IONBF, 0);
     setvbuf(stdout, nullptr, _IOLBF, 0);

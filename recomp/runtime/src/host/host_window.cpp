@@ -47,15 +47,22 @@ namespace
 			std::this_thread::sleep_for(std::chrono::milliseconds(16));
 			const uint64_t swap = ips3_gpu_swap_count();
 			uint32_t width, height;
+			static uint64_t grabs = 0, failures = 0;
+			static auto reported = std::chrono::steady_clock::now();
+			if (std::chrono::steady_clock::now() - reported > std::chrono::seconds(5))
+			{
+				reported = std::chrono::steady_clock::now();
+				fmt::println(stderr, "[host] swap {}: {} frames shown, {} read-backs failed", swap, grabs, failures);
+			}
 			if (swap < 4 || swap == lastSwap)
 				continue;
 			if (!ips3_gpu_grab_frame(pixels, width, height))
 			{
-				static int failures = 0;
 				if (failures++ < 5)
 					fmt::println(stderr, "[host] no picture to show at swap {}", swap);
 				continue;
 			}
+			grabs++;
 			lastSwap = swap;
 			static uint64_t grabbed = 0;
 			if (grabbed == 0)
@@ -520,8 +527,11 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 			std::deque<std::string> tail;
 			for (std::string line; std::getline(log, line);)
 			{
-				tail.push_back(line.substr(0, 120));
-				if (tail.size() > 14)
+				// The runtime's own lines ("[status] ...", "[host] ..."), not the driver's.
+				if (line.empty() || line[0] != '[' || line.starts_with("[mvk"))
+					continue;
+				tail.push_back(line.substr(0, 160));
+				if (tail.size() > 12)
 					tail.pop_front();
 			}
 			std::string text = "No picture yet. Screenshot this for the developer:\n\n";
