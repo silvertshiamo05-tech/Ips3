@@ -29,7 +29,7 @@ index 34add40..dd51fd2 100644
          DEBUG(const auto blockBase = curBlock.base);
          const uint32_t instruction = ByteSwap(*data);
 diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
-index fa91527..e53f8f3 100644
+index fa91527..0c0ed19 100644
 --- a/XenonRecomp/recompiler.cpp
 +++ b/XenonRecomp/recompiler.cpp
 @@ -242,7 +242,19 @@ void Recompiler::Analyse()
@@ -344,8 +344,17 @@ index fa91527..e53f8f3 100644
          break;
  
      case PPC_INST_TDLGEI:
+@@ -2382,7 +2597,7 @@ bool Recompiler::Recompile(const Function& fn)
+     }
+ 
+ #ifdef XENON_RECOMP_USE_ALIAS
+-    println("__attribute__((alias(\"__imp__{}\"))) PPC_WEAK_FUNC({});", name, name);
++    println("PPC_FUNC_ALIAS({});", name);
+ #endif
+ 
+     println("PPC_FUNC_IMPL(__imp__{}) {{", name);
 diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
-index 31a86cd..44a37df 100644
+index 31a86cd..ee5b36b 100644
 --- a/XenonUtils/ppc_context.h
 +++ b/XenonUtils/ppc_context.h
 @@ -5,6 +5,7 @@
@@ -356,7 +365,21 @@ index 31a86cd..44a37df 100644
  #include <climits>
  #include <cmath>
  #include <csetjmp>
-@@ -700,4 +701,18 @@ inline uint64_t __rdtsc()
+@@ -28,6 +29,13 @@
+ #define PPC_FUNC_IMPL(x) extern "C" PPC_FUNC(x)
+ #define PPC_EXTERN_FUNC(x) extern PPC_FUNC(x)
+ #define PPC_WEAK_FUNC(x) __attribute__((weak,noinline)) PPC_FUNC(x)
++// x: a weak name for the recompiled __imp__x, which a host may replace. Mach-O (Apple) has no
++// symbol aliases, so there it is a weak function that calls __imp__x.
++#ifdef __APPLE__
++#define PPC_FUNC_ALIAS(x) PPC_FUNC_IMPL(__imp__##x); PPC_WEAK_FUNC(x) { __imp__##x(ctx, base); }
++#else
++#define PPC_FUNC_ALIAS(x) __attribute__((alias("__imp__" #x))) PPC_WEAK_FUNC(x)
++#endif
+ 
+ #define PPC_FUNC_PROLOGUE() __builtin_assume(((size_t)base & 0x1F) == 0)
+ 
+@@ -700,4 +708,18 @@ inline uint64_t __rdtsc()
  #   error "Missing implementation for __rdtsc()"
  #endif
  
