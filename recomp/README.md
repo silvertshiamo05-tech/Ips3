@@ -104,7 +104,28 @@ menu music is still silent) and game controllers. For headless runs, `IPS3_INPUT
 presses and `IPS3_AUDIO_WAV` records the output. Linux desktops need the ALSA or PulseAudio
 development packages for SDL's audio.
 
-Next: the menu music, MoltenVK on iOS, then a test IPA.
+With `IPS3_WINDOW=1` (always on iOS) the game shows in a window, letterboxed, with on-screen
+touch controls (sticks, face buttons, shoulders, triggers, D-pad, Back/Start) whenever no
+controller is connected.
+
+### iPad
+
+The iOS app is `Bayonetta.app` (`ios/Info.plist.in`), built with CMake for `CMAKE_SYSTEM_NAME=iOS`
+against MoltenVK's static library (`-DMOLTENVK_LIB=.../libMoltenVK.a`). There is no JIT: the
+game is native ARM64 code, so a sideloaded app needs no special entitlements.
+
+- First launch asks for the disc image with the Files picker (it is read in place and
+  remembered); an `.iso` copied into the app's Documents folder is found without asking.
+- Saves go to `Documents/save`, the log to `Documents/bayonetta-log.txt` (both visible in the
+  Files app under the app's name).
+- A controller works as on desktops; without one the touch controls show.
+
+The public workflow `recomp-ios-check.yml` builds the app with an empty stand-in for the game
+code (`ci/make_stub_ppc.sh`), to check that everything compiles and links for iOS. A playable
+build needs the generated code, so it can only be made from the owner's copy of the game in a
+private repository or on a Mac.
+
+Next: the menu music, then testing on the device.
 
 ## Tools
 
