@@ -1,0 +1,47 @@
+diff --git a/src/xenia/ui/vulkan/vulkan_instance.cc b/src/xenia/ui/vulkan/vulkan_instance.cc
+index 7584e1e1f..bb825dddb 100644
+--- a/src/xenia/ui/vulkan/vulkan_instance.cc
++++ b/src/xenia/ui/vulkan/vulkan_instance.cc
+@@ -24,6 +24,13 @@
+ #include <dlfcn.h>
+ #elif XE_PLATFORM_WIN32
+ #include "xenia/base/platform_win.h"
++#elif XE_PLATFORM_MAC
++// MoltenVK is linked in statically (iOS cannot load it at run time); its entry points are the
++// loader. VK_NO_PROTOTYPES hides the declarations, so declare the two used here.
++extern "C" PFN_vkVoidFunction vkGetInstanceProcAddr(VkInstance instance,
++                                                    const char* name);
++extern "C" void vkDestroyInstance(VkInstance instance,
++                                  const VkAllocationCallbacks* allocator);
+ #endif
+ 
+ DEFINE_bool(
+@@ -74,6 +81,9 @@ std::unique_ptr<VulkanInstance> VulkanInstance::Create(
+ #define XE_VULKAN_LOAD_LOADER_FUNCTION(name)                 \
+   functions_loaded &= (ifn.name = PFN_##name(GetProcAddress( \
+                            vulkan_instance->loader_, #name))) != nullptr;
++#elif XE_PLATFORM_MAC
++#define XE_VULKAN_LOAD_LOADER_FUNCTION(name) \
++  functions_loaded &= (ifn.name = &::name) != nullptr;
+ #else
+ #error No Vulkan loader library loading provided for the target platform.
+ #endif
+@@ -458,8 +468,16 @@ std::unique_ptr<VulkanInstance> VulkanInstance::Create(
+ 
+   // Check whether a surface can be created.
+ 
+-  if (with_surface && !VulkanPresenter::GetSurfaceTypesSupportedByInstance(
+-                          vulkan_instance->extensions_)) {
++  // Apple hosts present the guest output themselves (no Xenia surface type there), but still
++  // need the presenter for it.
++#if XE_PLATFORM_MAC
++  const bool check_surface_types = false;
++#else
++  const bool check_surface_types = with_surface;
++#endif
++  if (check_surface_types &&
++      !VulkanPresenter::GetSurfaceTypesSupportedByInstance(
++          vulkan_instance->extensions_)) {
+     XELOGE("The Vulkan instance doesn't support surface types used by Xenia");
+     return nullptr;
+   }

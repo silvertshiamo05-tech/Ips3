@@ -20,6 +20,7 @@
 #include "xenia/base/math.h"
 #include "xenia/base/mutex.h"
 #include "xenia/memory.h"
+#include "ips3_gpu.h"
 
 namespace xe {
 namespace cpu {
@@ -52,7 +53,7 @@ struct sigaction g_previous_bus;
 // Watches protect the page in every window, and a fault in any of them counts.
 bool GuestToPhysical(uint32_t guest, uint32_t* physical) {
   if (guest >= 0xE0000000) {
-    *physical = guest - 0xE0000000 + 0x1000;
+    *physical = guest - 0xE0000000 + ips3_e_view_shift();
     return *physical < kPhysicalSize;
   }
   if (guest >= 0xA0000000) {
@@ -70,8 +71,8 @@ void ProtectPhysical(uint32_t physical, size_t size, int protection) {
   uint8_t* base = ips3_guest_membase;
   mprotect(base + 0xA0000000 + physical, size, protection);
   mprotect(base + 0xC0000000 + physical, size, protection);
-  if (physical >= 0x1000) {
-    mprotect(base + 0xE0000000 + physical - 0x1000, size, protection);
+  if (physical >= ips3_e_view_shift()) {
+    mprotect(base + 0xE0000000 + physical - ips3_e_view_shift(), size, protection);
   }
   if (physical < 0xC80000) {
     mprotect(base + 0x7F000000 + physical, std::min<size_t>(size, 0xC80000 - physical), protection);

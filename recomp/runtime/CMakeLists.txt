@@ -28,6 +28,7 @@ add_executable(bayonetta
     src/apu/audio.cpp
     src/hid/hid.cpp
     src/host/host_sdl.cpp
+    src/host/host_window.cpp
     src/cpu/guest_thread.cpp
     src/gpu/interrupts.cpp
     src/kernel/heap.cpp
@@ -70,3 +71,30 @@ target_compile_options(bayonetta PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/src/stdafx.h>")
 target_link_libraries(bayonetta PRIVATE BayonettaPPC XeniaGpu XenonUtils fmt::fmt xxHash::xxhash Threads::Threads SDL2::SDL2-static)
 set_target_properties(bayonetta PROPERTIES ENABLE_EXPORTS ON) # function names in crash backtraces
+if(TARGET SDL2::SDL2main)
+    target_link_libraries(bayonetta PRIVATE SDL2::SDL2main) # provides main() on iOS
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # The iOS app: Bayonetta.app with the runtime as its executable. Xenia's Vulkan backend runs
+    # on MoltenVK, linked statically (MOLTENVK_LIB: libMoltenVK.a from the MoltenVK release).
+    enable_language(OBJCXX)
+    target_sources(bayonetta PRIVATE src/host/ios_files.mm)
+    set(MOLTENVK_LIB "" CACHE FILEPATH "libMoltenVK.a for iOS (arm64)")
+    if(NOT MOLTENVK_LIB)
+        message(FATAL_ERROR "Set MOLTENVK_LIB to MoltenVK's static library for iOS")
+    endif()
+    target_link_libraries(bayonetta PRIVATE ${MOLTENVK_LIB}
+        "-framework Metal" "-framework MetalKit" "-framework QuartzCore" "-framework IOSurface"
+        "-framework UIKit" "-framework Foundation" "-framework CoreGraphics"
+        "-framework UniformTypeIdentifiers" "-framework GameController" "-framework AVFoundation"
+        "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreMotion" "-framework CoreHaptics")
+    set_target_properties(bayonetta PROPERTIES
+        OUTPUT_NAME Bayonetta
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist.in
+        MACOSX_BUNDLE_GUI_IDENTIFIER com.ips3.bayonetta
+        MACOSX_BUNDLE_BUNDLE_NAME Bayonetta
+        MACOSX_BUNDLE_SHORT_VERSION_STRING 0.1
+        MACOSX_BUNDLE_BUNDLE_VERSION 1)
+endif()

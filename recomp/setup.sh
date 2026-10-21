@@ -66,6 +66,7 @@ fetch_pinned date https://github.com/HowardHinnant/date.git f94b8f36c6180be00218
 fetch_pinned utfcpp https://github.com/nemtrif/utfcpp.git 65701fe00700577f9f4e9b96d682bd7cfcc0b76e
 fetch_pinned disruptorplus https://github.com/xenia-canary/disruptorplus.git bf9c70c0cc92b6435f7edec75e12751ea37e5c2f
 fetch_pinned xbyak https://github.com/herumi/xbyak.git 4e44f4614ddbf038f2a6296f5b906d5c72691e0f
+fetch_pinned xbyak_aarch64 https://github.com/fujitsu/xbyak_aarch64.git 59c6a7e7368cd2dbb07c46abe83239ace4d58849
 # The presenter's sharpening and upscaling shaders.
 fetch_pinned FidelityFX-CAS https://github.com/GPUOpen-Effects/FidelityFX-CAS.git 9fabcc9a2c45f958aff55ddfda337e74ef894b7f
 fetch_pinned FidelityFX-FSR https://github.com/GPUOpen-Effects/FidelityFX-FSR.git a21ffb8f6c13233ba336352bdff293894c706575

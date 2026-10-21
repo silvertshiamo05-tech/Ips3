@@ -3,6 +3,18 @@
 #pragma once
 
 #include <cstdint>
+#include <unistd.h>
+#include <vector>
+
+// The 0xE0000000 view of physical memory is shifted by 4 KiB on the console (guest 0xE0000000
+// is physical 0x1000). That can only be reproduced with 4 KiB host pages; on 16 KiB-page hosts
+// (Apple silicon, iOS) the view is mapped unshifted and every conversion uses this instead.
+inline uint32_t ips3_e_view_shift() {
+  static const uint32_t shift = sysconf(_SC_PAGESIZE) <= 0x1000 ? 0x1000 : 0;
+  return shift;
+}
+
+#include <cstdint>
 
 // Starts the Vulkan GPU over guest memory at guest_membase.
 bool ips3_gpu_start(uint8_t* guest_membase);
@@ -17,6 +29,8 @@ void ips3_gpu_write_swap(uint32_t* buffer, const uint32_t* fetch, uint32_t width
 uint64_t ips3_gpu_swap_count();
 
 // Saves the last presented frame as a PNG.
+// Reads back the latest guest output as tightly packed R8G8B8X8 pixels (for host windows).
+bool ips3_gpu_grab_frame(std::vector<uint8_t>& rgbx, uint32_t& width, uint32_t& height);
 bool ips3_gpu_capture_frame(const char* path);
 
 // Runtime side.

@@ -46,24 +46,17 @@ static thread_local GuestThreadHandle* g_startingThread = nullptr;
 #ifdef USE_PTHREAD
 static size_t GetStackSize()
 {
-    // Cache as this should not change.
-    static size_t stackSize = 0;
-    if (stackSize == 0)
+    // Ips3: recompiled code nests as deeply as the guest's call chains, so every guest thread
+    // gets 8 MiB, or more if the main thread's limit is higher. (RLIMIT_STACK describes the main
+    // thread only; on iOS it is 1 MiB, far less than secondary threads may have.)
+    static const size_t stackSize = []
     {
-        // 8 MiB is a typical default.
-        constexpr auto defaultSize = 8 * 1024 * 1024;
+        constexpr size_t defaultSize = 8 * 1024 * 1024;
         struct rlimit lim;
-        const auto ret = getrlimit(RLIMIT_STACK, &lim);
-        if (ret == 0 && lim.rlim_cur < defaultSize)
-        {
-            // Use what the system allows.
-            stackSize = lim.rlim_cur;
-        }
-        else
-        {
-            stackSize = defaultSize;
-        }
-    }
+        if (getrlimit(RLIMIT_STACK, &lim) == 0 && lim.rlim_cur != RLIM_INFINITY && lim.rlim_cur > defaultSize)
+            return size_t(lim.rlim_cur);
+        return defaultSize;
+    }();
     return stackSize;
 }
 

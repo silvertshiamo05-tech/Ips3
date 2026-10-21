@@ -6,11 +6,23 @@
 //
 //   bayonetta <game> [save directory] [--xex default.xex]
 //
+// With a window (iOS, or IPS3_WINDOW=1) the game runs on its own thread and the main thread runs
+// the window; on iOS the disc image comes from the Documents folder or a file picker.
+//
 // <game> is the disc image (.iso) or a folder with the extracted disc. default.xex is read from
 // it unless --xex names another copy.
 
-#include <host/host.h>
 #include <stdafx.h>
+#include <host/host.h>
+
+#include <SDL_main.h> // on iOS, SDL runs the app and calls this main
+
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+#include <host/ios.h>
+#endif
 
 #include <cpu/guest_thread.h>
 #include <kernel/function.h>
@@ -122,8 +134,74 @@ static void MountGame()
     }
 }
 
+// Mounts the disc image (or folder), starts the GPU, loads default.xex and starts the guest's
+// main thread: on its own host thread with a window, else on this one (and then only returns
+// when the game exits).
+static bool StartGame(const std::filesystem::path& image, const std::filesystem::path& savePath,
+    const std::filesystem::path& xexPath, bool ownThread)
+{
+    if (g_memory.base == nullptr)
+    {
+        host::ShowError("Could not reserve 4 GiB of address space for the game's memory.");
+        return false;
+    }
+
+    g_gamePath = std::filesystem::absolute(image);
+    g_savePath = savePath.empty() ? g_gamePath.parent_path() / "save" : savePath;
+    std::error_code ec;
+    std::filesystem::create_directories(g_savePath, ec);
+
+    if (std::filesystem::is_regular_file(g_gamePath))
+    {
+        auto disc = DiscImage::Open(g_gamePath);
+        if (disc == nullptr)
+        {
+            host::ShowError(fmt::format("{} is not an Xbox 360 disc image.", g_gamePath.filename().string()));
+            return false;
+        }
+        DiscImage::Mount(std::move(disc));
+    }
+
+    // Guest allocations (the loader's included) come from the heaps.
+    g_userHeap.Init();
+
+    if (!ips3_gpu_start(g_memory.base))
+    {
+        host::ShowError("Could not start the Vulkan GPU.");
+        return false;
+    }
+
+    const auto xex = ReadExecutable(xexPath);
+    if (xex.empty())
+    {
+        host::ShowError("default.xex was not found on the disc.");
+        return false;
+    }
+
+    const uint32_t entry = LoadExecutable(xex, xexPath.empty() ? "default.xex" : xexPath.string());
+    if (!entry)
+    {
+        host::ShowError("This disc's default.xex is not the one this build was made from.");
+        return false;
+    }
+
+    MountGame();
+
+    fmt::println("Starting guest thread at {:08X}", entry);
+    if (ownThread)
+        GuestThread::Start({ entry, 0, 0 }, nullptr); // a host thread with a full-size stack
+    else
+        GuestThread::Start({ entry, 0, 0 });
+    return true;
+}
+
 int main(int argc, char** argv)
 {
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    // No terminal on iOS: the log goes to Documents/bayonetta-log.txt (visible in Files).
+    ios::RedirectLog();
+#endif
+
     std::vector<std::string> args;
     std::filesystem::path xexPath;
     for (int i = 1; i < argc; i++)
@@ -134,59 +212,29 @@ int main(int argc, char** argv)
             args.emplace_back(argv[i]);
     }
 
-    if (args.empty())
-    {
-        fmt::println(stderr, "usage: {} <game.iso | game folder> [save directory] [--xex default.xex]", argv[0]);
-        return 1;
-    }
+    std::filesystem::path image = args.size() > 0 ? std::filesystem::path(args[0]) : std::filesystem::path();
+    std::filesystem::path savePath = args.size() > 1 ? std::filesystem::path(args[1]) : std::filesystem::path();
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    if (savePath.empty())
+        savePath = ios::DocumentsPath() / "save";
+#endif
 
-    if (g_memory.base == nullptr)
-    {
-        fmt::println(stderr, "Could not reserve 4 GiB of guest memory");
-        return 1;
-    }
-
-    g_gamePath = std::filesystem::absolute(args[0]);
-    g_savePath = args.size() > 1 ? std::filesystem::path(args[1]) : g_gamePath.parent_path() / "save";
-    std::filesystem::create_directories(g_savePath);
-
-    if (std::filesystem::is_regular_file(g_gamePath))
-    {
-        auto disc = DiscImage::Open(g_gamePath);
-        if (disc == nullptr)
-        {
-            fmt::println(stderr, "{} is not an Xbox 360 disc image", g_gamePath.string());
-            return 1;
-        }
-        DiscImage::Mount(std::move(disc));
-    }
-
-    // Guest allocations (the loader's included) come from the heaps.
-    g_userHeap.Init();
     host::Init();
 
-    if (!ips3_gpu_start(g_memory.base))
+    if (host::WindowMode())
     {
-        fmt::println(stderr, "Could not start the Vulkan GPU");
+        return host::RunWindow(image, [&](const std::filesystem::path& chosen)
+        {
+            return StartGame(chosen, savePath, xexPath, true);
+        });
+    }
+
+    if (image.empty())
+    {
+        fmt::println(stderr, "usage: {} <game.iso | game folder> [save directory] [--xex default.xex]", argv[0]);
+        fmt::println(stderr, "       IPS3_WINDOW=1 shows the game in a window.");
         return 1;
     }
 
-    const auto xex = ReadExecutable(xexPath);
-    if (xex.empty())
-    {
-        fmt::println(stderr, "default.xex not found");
-        return 1;
-    }
-
-    const uint32_t entry = LoadExecutable(xex, xexPath.empty() ? "default.xex" : xexPath.string());
-    if (!entry)
-    {
-        return 1;
-    }
-
-    MountGame();
-
-    fmt::println("Starting guest thread at {:08X}", entry);
-    GuestThread::Start({ entry, 0, 0 });
-    return 0;
+    return StartGame(image, savePath, xexPath, false) ? 0 : 1;
 }

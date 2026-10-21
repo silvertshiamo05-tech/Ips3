@@ -1,5 +1,7 @@
-// Ips3: SDL2 host layer. Audio goes out through an SDL queue; game controllers are polled on a
-// host thread and handed to the guest's XamInput* calls through hid::SetHostState.
+// Ips3: SDL2 host layer. Audio goes out through an SDL queue; game controllers (and, with a
+// window, the touch controls) are combined into the pad the guest's XamInput* calls read through
+// hid::SetHostState. Headless, a host thread polls them; with a window (host_window.cpp), the
+// window's event loop does.
 //
 // Environment:
 //   IPS3_AUDIO_WAV=<file>   also write everything played to a 48 kHz stereo float WAV file.
@@ -7,10 +9,15 @@
 //                           times from start-up, e.g. "30000:START:150;32000:A:150".
 #include <stdafx.h>
 #include "host.h"
+#include "host_internal.h"
 
 #include <hid/hid.h>
 
 #include <SDL.h>
+
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 
 #include <atomic>
 #include <cstdio>
@@ -126,76 +133,105 @@ namespace
 		state.thumbRY = Axis(pad, SDL_CONTROLLER_AXIS_RIGHTY, true);
 	}
 
-	// Polls controllers about every 4 ms (the console's input rate) and forwards rumble.
-	void InputThread(std::vector<ScriptedPress> script)
-	{
-		std::vector<SDL_GameController*> pads;
-		const auto start = std::chrono::steady_clock::now();
+	std::vector<SDL_GameController*> g_pads;
+	std::vector<ScriptedPress> g_script;
+	const auto g_start = std::chrono::steady_clock::now();
 
+	// Polls controllers about every 4 ms (the console's input rate) when there is no window.
+	void InputThread()
+	{
 		for (;;)
 		{
 			SDL_Event event;
 			while (SDL_PollEvent(&event))
-			{
-				if (event.type == SDL_CONTROLLERDEVICEADDED)
-				{
-					if (SDL_GameController* pad = SDL_GameControllerOpen(event.cdevice.which))
-					{
-						pads.push_back(pad);
-						fmt::println(stderr, "[host] controller connected: {}", SDL_GameControllerName(pad));
-					}
-				}
-				else if (event.type == SDL_CONTROLLERDEVICEREMOVED)
-				{
-					std::erase_if(pads, [&](SDL_GameController* pad)
-					{
-						if (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pad)) != event.cdevice.which)
-							return false;
-						SDL_GameControllerClose(pad);
-						return true;
-					});
-				}
-			}
-
-			// Player 0 is always present: the first controller plus any scripted presses. The game
-			// treats a missing pad as unplugged and pauses on it.
-			hid::HostPadState state;
-			state.connected = true;
-			if (!pads.empty())
-				ReadController(pads.front(), state);
-
-			const uint32_t now = uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
-				std::chrono::steady_clock::now() - start).count());
-			for (auto& press : script)
-			{
-				if (now >= press.at && now < press.at + press.hold)
-				{
-					state.buttons |= press.button;
-					if (!press.logged)
-					{
-						press.logged = true;
-						fmt::println(stderr, "[host] scripted press {:04X} at {} ms", press.button, now);
-					}
-				}
-			}
-
-			hid::SetHostState(0, state);
-
-			if (!pads.empty())
-			{
-				uint16_t left, right;
-				hid::GetHostVibration(0, left, right);
-				SDL_GameControllerRumble(pads.front(), left, right, 100);
-			}
-
+				host::ProcessControllerEvent(event);
+			host::UpdatePad(0, 0, {});
 			std::this_thread::sleep_for(std::chrono::milliseconds(4));
 		}
+	}
+}
+
+void host::ProcessControllerEvent(const SDL_Event& event)
+{
+	if (event.type == SDL_CONTROLLERDEVICEADDED)
+	{
+		if (SDL_GameController* pad = SDL_GameControllerOpen(event.cdevice.which))
+		{
+			g_pads.push_back(pad);
+			fmt::println(stderr, "[host] controller connected: {}", SDL_GameControllerName(pad));
+		}
+	}
+	else if (event.type == SDL_CONTROLLERDEVICEREMOVED)
+	{
+		std::erase_if(g_pads, [&](SDL_GameController* pad)
+		{
+			if (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pad)) != event.cdevice.which)
+				return false;
+			SDL_GameControllerClose(pad);
+			return true;
+		});
+	}
+}
+
+bool host::ControllerConnected()
+{
+	return !g_pads.empty();
+}
+
+void host::UpdatePad(uint16_t extraButtons, uint8_t extraTriggers, const TouchSticks& sticks)
+{
+	// Player 0 is always present: the first controller, the touch controls and any scripted
+	// presses. The game treats a missing pad as unplugged and pauses on it.
+	hid::HostPadState state;
+	state.connected = true;
+	if (!g_pads.empty())
+		ReadController(g_pads.front(), state);
+
+	state.buttons |= extraButtons;
+	if (extraTriggers & 1)
+		state.leftTrigger = 255;
+	if (extraTriggers & 2)
+		state.rightTrigger = 255;
+	auto merge = [](int16_t& axis, float value)
+	{
+		if (value != 0.0f)
+			axis = int16_t(std::clamp(value, -1.0f, 1.0f) * 32767.0f);
+	};
+	merge(state.thumbLX, sticks.leftX);
+	merge(state.thumbLY, sticks.leftY);
+	merge(state.thumbRX, sticks.rightX);
+	merge(state.thumbRY, sticks.rightY);
+
+	const uint32_t now = uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now() - g_start).count());
+	for (auto& press : g_script)
+	{
+		if (now >= press.at && now < press.at + press.hold)
+		{
+			state.buttons |= press.button;
+			if (!press.logged)
+			{
+				press.logged = true;
+				fmt::println(stderr, "[host] scripted press {:04X} at {} ms", press.button, now);
+			}
+		}
+	}
+
+	hid::SetHostState(0, state);
+
+	if (!g_pads.empty())
+	{
+		uint16_t left, right;
+		hid::GetHostVibration(0, left, right);
+		SDL_GameControllerRumble(g_pads.front(), left, right, 100);
 	}
 }
 
 void host::Init()
 {
 	SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+	// iOS: play through the silent switch, like a game console would.
+	SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "playback");
 	if (SDL_Init(SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0)
 		fmt::println(stderr, "[host] SDL controllers unavailable: {}", SDL_GetError());
 
@@ -206,13 +242,22 @@ void host::Init()
 			WriteWavHeader();
 	}
 
-	std::vector<ScriptedPress> script;
 	if (const char* text = getenv("IPS3_INPUT"))
-		script = ParseScript(text);
+		g_script = ParseScript(text);
 
 	// Player 0 reads as connected from the first frame on.
 	hid::SetHostState(0, hid::HostPadState{ .connected = true });
-	std::thread(InputThread, std::move(script)).detach();
+	if (!WindowMode())
+		std::thread(InputThread).detach();
+}
+
+bool host::WindowMode()
+{
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	return true;
+#else
+	return getenv("IPS3_WINDOW") != nullptr;
+#endif
 }
 
 bool host::AudioOpen()

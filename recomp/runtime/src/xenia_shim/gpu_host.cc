@@ -10,6 +10,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <condition_variable>
 #include <fstream>
 #include <thread>
 
@@ -267,13 +270,58 @@ bool WritePng(const char* path, uint32_t width, uint32_t height, uint32_t stride
 
 }  // namespace
 
-bool ips3_gpu_capture_frame(const char* path) {
+namespace {
+// Reads the guest output back on the GPU command thread: the read-back submits to the same
+// Vulkan queue as the command processor, and submitting from two threads stalls some drivers.
+bool CaptureOnGpuThread(xe::ui::RawImage& image) {
   xe::ui::Presenter* presenter = g_gpu.graphics ? g_gpu.graphics->presenter() : nullptr;
-  if (!presenter) {
+  xe::gpu::CommandProcessor* cp = g_gpu.graphics ? g_gpu.graphics->command_processor() : nullptr;
+  if (!presenter || !cp) {
     return false;
   }
+  struct Request {
+    std::mutex mutex;
+    std::condition_variable done;
+    bool finished = false;
+    bool ok = false;
+    xe::ui::RawImage image;
+  };
+  auto request = std::make_shared<Request>();
+  cp->CallInThread([request, presenter]() {
+    const bool ok = presenter->CaptureGuestOutput(request->image);
+    std::lock_guard lock(request->mutex);
+    request->ok = ok;
+    request->finished = true;
+    request->done.notify_all();
+  });
+  std::unique_lock lock(request->mutex);
+  if (!request->done.wait_for(lock, std::chrono::seconds(2), [&] { return request->finished; }) ||
+      !request->ok) {
+    return false;
+  }
+  image = std::move(request->image);
+  return true;
+}
+}  // namespace
+
+bool ips3_gpu_grab_frame(std::vector<uint8_t>& rgbx, uint32_t& width, uint32_t& height) {
   xe::ui::RawImage image;
-  if (!presenter->CaptureGuestOutput(image)) {
+  if (!CaptureOnGpuThread(image) || !image.width || !image.height) {
+    return false;
+  }
+  width = image.width;
+  height = image.height;
+  const size_t row = size_t(width) * 4;
+  rgbx.resize(row * height);
+  for (uint32_t y = 0; y < height; ++y) {
+    std::memcpy(rgbx.data() + row * y, image.data.data() + image.stride * y, row);
+  }
+  return true;
+}
+
+bool ips3_gpu_capture_frame(const char* path) {
+  xe::ui::RawImage image;
+  if (!CaptureOnGpuThread(image)) {
     return false;
   }
   return WritePng(path, image.width, image.height, uint32_t(image.stride), image.data.data());

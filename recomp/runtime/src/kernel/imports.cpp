@@ -7,6 +7,7 @@
 #include "xbox.h"
 #include "heap.h"
 #include "memory.h"
+#include <ips3_gpu.h>
 #include <memory>
 #include "xam.h"
 #include "xdm.h"
@@ -767,7 +768,7 @@ uint32_t MmGetPhysicalAddress(uint32_t address)
     // Ips3: physical memory is the 512 MiB seen at 0xA0000000 and 0xC0000000 (low 29 bits) and
     // at 0xE0000000 shifted by 4 KiB (see kernel/memory.cpp).
     if (address >= 0xE0000000)
-        return (address & 0x1FFFFFFF) + 0x1000;
+        return (address & 0x1FFFFFFF) + ips3_e_view_shift();
     return address & 0x1FFFFFFF;
 }
 

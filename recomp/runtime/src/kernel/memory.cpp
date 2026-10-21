@@ -1,5 +1,6 @@
 #include <stdafx.h>
 #include "memory.h"
+#include <ips3_gpu.h>
 
 #ifdef __APPLE__
 #include <mach/mach.h>
@@ -20,16 +21,17 @@ struct PhysicalView
     uint32_t size;
 };
 
-static constexpr PhysicalView PHYSICAL_ALIASES[] =
-{
-    { 0xC0000000, 0x00000000, 0x20000000 },
-    { 0xE0000000, 0x00001000, 0x1FFFF000 },
-    // Up to the GPU register window at 0x7FC80000, which stays separate memory.
-    { 0x7F000000, 0x00000000, 0x00C80000 },
-};
-
 static bool MapPhysicalViews(uint8_t* base)
 {
+    // Built here, not as a global: guest memory is set up during static initialisation.
+    const PhysicalView PHYSICAL_ALIASES[] =
+    {
+        { 0xC0000000, 0x00000000, 0x20000000 },
+        { 0xE0000000, ips3_e_view_shift(), 0x20000000 - ips3_e_view_shift() },
+        // Up to the GPU register window at 0x7FC80000, which stays separate memory.
+        { 0x7F000000, 0x00000000, 0x00C80000 },
+    };
+
     constexpr uint32_t PHYSICAL_BASE = 0xA0000000;
     constexpr size_t PHYSICAL_SIZE = 0x20000000;
 
@@ -97,7 +99,7 @@ Memory::Memory()
     if (base == nullptr)
         return;
 
-    mprotect(base, 4096, PROT_NONE);
+    mprotect(base, size_t(sysconf(_SC_PAGESIZE)), PROT_NONE); // null guest pointers fault
 #endif
 
     if (!MapPhysicalViews(base))

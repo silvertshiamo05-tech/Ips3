@@ -2,7 +2,9 @@ name: iOS build
 
 on:
   push:
+    paths-ignore: ["recomp/**", ".github/workflows/recomp-*.yml"]
   pull_request:
+    paths-ignore: ["recomp/**", ".github/workflows/recomp-*.yml"]
   workflow_dispatch:
 
 # No run-level concurrency: a push must never cancel a dependency build that is hours in.
