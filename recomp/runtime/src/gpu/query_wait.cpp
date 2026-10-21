@@ -12,8 +12,8 @@
 #include <chrono>
 #include <thread>
 
-// The recompiled GetData (absent from the CI build without game code, hence weak).
-extern "C" PPC_FUNC(__imp__sub_822254E0) __attribute__((weak));
+// The recompiled GetData (an empty stand-in in the CI build without game code).
+PPC_FUNC_IMPL(__imp__sub_822254E0);
 
 PPC_FUNC(sub_822254E0)
 {

@@ -21,3 +21,5 @@ H
 { printf '#pragma once\n#include "ppc_config.h"\n\n'; cat "$XU/ppc_context.h"; } > "$OUT/ppc_context.h"
 printf '#pragma once\n\n#include "ppc_config.h"\n#include "ppc_context.h"\n' > "$OUT/ppc_recomp_shared.h"
 printf '#include "ppc_recomp_shared.h"\n\nPPCFuncMapping PPCFuncMappings[] = {\n\t{ 0, nullptr }\n};\n' > "$OUT/ppc_func_mapping.cpp"
+# The game functions the runtime wraps (src/gpu/query_wait.cpp), as empty stand-ins.
+printf '#include "ppc_recomp_shared.h"\n\nPPC_FUNC_IMPL(__imp__sub_822254E0) {}\n' > "$OUT/ppc_recomp.0.cpp"
