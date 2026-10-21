@@ -33,6 +33,20 @@ namespace hid
 	uint32_t SetState(uint32_t dwUserIndex, XAMINPUT_VIBRATION* pVibration);
 	uint32_t GetCapabilities(uint32_t dwUserIndex, XAMINPUT_CAPABILITIES* pCaps);
 
+	// XINPUT_KEYSTROKE as the guest sees it (fields in host order; the caller swaps).
+	struct Keystroke
+	{
+		uint16_t virtualKey;
+		uint16_t unicode;
+		uint16_t flags; // 1 key down, 2 key up, 4 repeat
+		uint8_t userIndex;
+		uint8_t hidCode;
+	};
+
+	// Next key event derived from the pads' state changes, for XamInputGetKeystroke(Ex).
+	// userIndex 0xFF means any player. False when there is none.
+	bool GetKeystroke(uint32_t userIndex, Keystroke& keystroke);
+
 	bool IsInputAllowed();
 	bool IsInputDeviceController();
 }

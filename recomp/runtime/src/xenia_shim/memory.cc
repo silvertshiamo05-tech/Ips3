@@ -15,6 +15,7 @@
 
 #include <sys/mman.h>
 #include <unistd.h>
+#include <execinfo.h>
 
 #include "xenia/base/math.h"
 #include "xenia/base/mutex.h"
@@ -314,6 +315,14 @@ void FaultHandler(int signal, siginfo_t* info, void* context) {
     previous.sa_handler(signal);
     return;
   }
+
+  // A real crash: say where before the default action ends the process.
+  char header[96];
+  const int length = snprintf(header, sizeof(header), "Ips3: fatal signal %d at address %p\n",
+                              signal, info->si_addr);
+  write(STDERR_FILENO, header, length);
+  void* frames[48];
+  backtrace_symbols_fd(frames, backtrace(frames, 48), STDERR_FILENO);
   ::signal(signal, SIG_DFL);
 }
 

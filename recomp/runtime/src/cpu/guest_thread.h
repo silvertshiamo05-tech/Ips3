@@ -34,6 +34,9 @@ struct GuestThreadParams
     uint32_t function;
     uint32_t value;
     uint32_t flags;
+    // Ips3: XAPI's thread startup routine, when given: it is entered with (function, value) and
+    // runs the title's per-thread attach/detach around the thread body, as on the console.
+    uint32_t startup = 0;
 };
 
 struct GuestThreadHandle : KernelObject

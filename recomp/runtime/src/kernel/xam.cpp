@@ -167,6 +167,23 @@ void XamNotifyEnqueueEvent(uint32_t dwId, uint32_t dwParam)
     }
 }
 
+struct Event;
+uint32_t NtSetEvent(Event* handle, uint32_t* previousState);
+
+uint32_t XamCompleteOverlapped(XXOVERLAPPED* overlapped, uint32_t result, uint32_t length)
+{
+    if (overlapped == nullptr)
+        return result;
+
+    overlapped->Error = result;
+    overlapped->Length = length;
+    overlapped->dwExtendedError = result;
+    if (overlapped->hEvent != 0)
+        NtSetEvent(GetKernelObject<Event>(overlapped->hEvent), nullptr);
+
+    return 997; // ERROR_IO_PENDING
+}
+
 bool XNotifyGetNext(uint32_t hNotification, uint32_t dwMsgFilter, be<uint32_t>* pdwId, be<uint32_t>* pParam)
 {
     auto& listener = *GetKernelObject<XamListener>(hNotification);
@@ -254,16 +271,9 @@ uint32_t XamShowMessageBoxUI(uint32_t dwUserIndex, be<uint16_t>* wszTitle, be<ui
     wprintf(L"[XamShowMessageBoxUI] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 #endif
 
-    if (pOverlapped)
-    {
-        pOverlapped->dwCompletionContext = GuestThread::GetCurrentThreadId();
-        pOverlapped->Error = 0;
-        pOverlapped->Length = -1;
-    }
-
     XamNotifyEnqueueEvent(9, 0);
 
-    return 0;
+    return XamCompleteOverlapped(pOverlapped, 0);
 }
 
 uint32_t XamContentCreateEnumerator(uint32_t dwUserIndex, uint32_t DeviceID, uint32_t dwContentType,
@@ -293,17 +303,16 @@ uint32_t XamEnumerate(uint32_t hEnum, uint32_t dwFlags, void* pvBuffer, uint32_t
     const auto count = enumerator->Next(pvBuffer);
 
     if (count == -1)
-        return ERROR_NO_MORE_FILES;
+        return XamCompleteOverlapped(pOverlapped, ERROR_NO_MORE_FILES);
 
     if (pcItemsReturned)
         *pcItemsReturned = count;
 
-    return ERROR_SUCCESS;
+    return XamCompleteOverlapped(pOverlapped, ERROR_SUCCESS, count);
 }
 
-uint32_t XamContentCreateEx(uint32_t dwUserIndex, const char* szRootName, const XCONTENT_DATA* pContentData,
-    uint32_t dwContentFlags, be<uint32_t>* pdwDisposition, be<uint32_t>* pdwLicenseMask,
-    uint32_t dwFileCacheSize, uint64_t uliContentSize, PXXOVERLAPPED pOverlapped)
+static uint32_t ContentCreate(const char* szRootName, const XCONTENT_DATA* pContentData,
+    uint32_t dwContentFlags, be<uint32_t>* pdwDisposition)
 {
     const auto& registry = gContentRegistry[pContentData->dwContentType - 1];
     const auto exists = registry.contains(StringHash(pContentData->szFileName));
@@ -370,10 +379,17 @@ uint32_t XamContentCreateEx(uint32_t dwUserIndex, const char* szRootName, const 
     return ERROR_PATH_NOT_FOUND;
 }
 
+uint32_t XamContentCreateEx(uint32_t dwUserIndex, const char* szRootName, const XCONTENT_DATA* pContentData,
+    uint32_t dwContentFlags, be<uint32_t>* pdwDisposition, be<uint32_t>* pdwLicenseMask,
+    uint32_t dwFileCacheSize, uint64_t uliContentSize, PXXOVERLAPPED pOverlapped)
+{
+    return XamCompleteOverlapped(pOverlapped, ContentCreate(szRootName, pContentData, dwContentFlags, pdwDisposition));
+}
+
 uint32_t XamContentClose(const char* szRootName, XXOVERLAPPED* pOverlapped)
 {
     gRootMap.erase(StringHash(szRootName));
-    return 0;
+    return XamCompleteOverlapped(pOverlapped, 0);
 }
 
 uint32_t XamContentGetDeviceData(uint32_t DeviceID, XDEVICE_DATA* pDeviceData)
@@ -392,7 +408,9 @@ uint32_t XamContentGetDeviceData(uint32_t DeviceID, XDEVICE_DATA* pDeviceData)
     return 0;
 }
 
-uint32_t XamInputGetCapabilities(uint32_t unk, uint32_t userIndex, uint32_t flags, XAMINPUT_CAPABILITIES* caps)
+// Ips3: Bayonetta calls the three-argument form (user, flags, caps); UnleashedRecomp's had an
+// extra leading argument, which read user 0 as user 1 ("not connected").
+uint32_t XamInputGetCapabilities(uint32_t userIndex, uint32_t flags, XAMINPUT_CAPABILITIES* caps)
 {
     uint32_t result = hid::GetCapabilities(userIndex, caps);
 
@@ -422,6 +440,9 @@ uint32_t XamInputGetState(uint32_t userIndex, uint32_t flags, XAMINPUT_STATE* st
 
     if (!hid::IsInputAllowed())
         memset(&state->Gamepad, 0, sizeof(state->Gamepad));
+
+    if (state->Gamepad.wButtons != 0 && getenv("IPS3_TRACE_INPUT"))
+        fmt::println(stderr, "[input] GetState user {} buttons {:04X} packet {}", userIndex, uint16_t(state->Gamepad.wButtons), uint32_t(state->dwPacketNumber));
 
     state->Gamepad.wButtons &= ~hid::g_prohibitedButtons;
 
@@ -471,7 +492,7 @@ namespace
 	constexpr uint32_t ERROR_NO_SUCH_USER_ = 0x525;
 	constexpr uint32_t ERROR_NOT_FOUND_ = 0x490;
 	constexpr uint32_t ERROR_EMPTY_ = 0x10D2;
-	constexpr uint64_t OFFLINE_XUID = 0xE000000000000001ull; // offline XUIDs have the top nibble E
+	constexpr uint64_t OFFLINE_XUID = XAM_OFFLINE_XUID;
 
 	// An enumerator that reports no items: achievements and stats live on Xbox Live.
 	struct EmptyEnumerator : XamEnumeratorBase
@@ -498,10 +519,40 @@ static uint32_t XamFree(uint32_t ptr)
 	return 0;
 }
 
-static uint32_t XamInputGetKeystrokeEx(be<uint32_t>* userIndex, uint32_t flags, void* keystroke)
+// XINPUT_KEYSTROKE: key events made from pad state changes (no chatpad or keyboard).
+struct XINPUT_KEYSTROKE_
 {
-	// No chatpad or keyboard.
-	return ERROR_EMPTY_;
+	be<uint16_t> VirtualKey;
+	be<uint16_t> Unicode;
+	be<uint16_t> Flags;
+	uint8_t UserIndex;
+	uint8_t HidCode;
+};
+
+static uint32_t XamInputGetKeystrokeEx(be<uint32_t>* userIndex, uint32_t flags, XINPUT_KEYSTROKE_* keystroke)
+{
+	const uint32_t user = userIndex ? uint32_t(*userIndex) : 0xFF;
+	if (user != 0xFF && user != 0)
+		return 1167; // ERROR_DEVICE_NOT_CONNECTED
+
+	hid::Keystroke key;
+	if (!hid::GetKeystroke(user, key))
+	{
+		memset(keystroke, 0, sizeof(*keystroke));
+		return ERROR_EMPTY_;
+	}
+
+	if (getenv("IPS3_TRACE_INPUT"))
+		fmt::println(stderr, "[input] keystroke {:04X} flags {}", key.virtualKey, key.flags);
+
+	keystroke->VirtualKey = key.virtualKey;
+	keystroke->Unicode = key.unicode;
+	keystroke->Flags = key.flags;
+	keystroke->UserIndex = key.userIndex;
+	keystroke->HidCode = key.hidCode;
+	if (userIndex)
+		*userIndex = key.userIndex;
+	return 0;
 }
 
 static uint32_t XamLoaderGetLaunchDataSize(be<uint32_t>* size)
@@ -536,7 +587,7 @@ static uint32_t XamSessionRefObjByHandle(uint32_t handle, be<uint32_t>* object)
 
 static uint32_t XamShowGamerCardUIForXUID(uint32_t userIndex, uint64_t xuid, XXOVERLAPPED* overlapped)
 {
-	return 0;
+	return XamCompleteOverlapped(overlapped, 0);
 }
 
 static uint32_t XamUserCreateAchievementEnumerator(uint32_t titleId, uint32_t userIndex, uint64_t xuid, uint32_t flags,

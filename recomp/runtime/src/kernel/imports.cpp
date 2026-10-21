@@ -220,12 +220,13 @@ uint32_t XGetGameRegion()
 
 uint32_t XMsgStartIORequest(uint32_t App, uint32_t Message, XXOVERLAPPED* lpOverlapped, void* Buffer, uint32_t szBuffer)
 {
-    return STATUS_SUCCESS;
+    return XamCompleteOverlapped(lpOverlapped, STATUS_SUCCESS);
 }
 
+// Ips3: one local profile, in slot 0 (1 = signed in locally).
 uint32_t XamUserGetSigninState(uint32_t userIndex)
 {
-    return true;
+    return userIndex == 0 ? 1 : 0;
 }
 
 uint32_t XamGetSystemVersion()
@@ -245,9 +246,9 @@ uint32_t XamContentGetCreator(uint32_t userIndex, const XCONTENT_DATA* contentDa
         *isCreator = true;
 
     if (xuid)
-        *xuid = 0xB13EBABEBABEBABE;
+        *xuid = XAM_OFFLINE_XUID;
 
-    return 0;
+    return XamCompleteOverlapped(overlapped, 0);
 }
 
 uint32_t XamContentGetDeviceState()
@@ -260,7 +261,7 @@ uint32_t XamUserGetSigninInfo(uint32_t userIndex, uint32_t flags, XUSER_SIGNIN_I
     if (userIndex == 0)
     {
         memset(info, 0, sizeof(*info));
-        info->xuid = 0xB13EBABEBABEBABE;
+        info->xuid = XAM_OFFLINE_XUID;
         info->SigninState = 1;
         strcpy(info->Name, "Player");
         return 0;
@@ -269,9 +270,14 @@ uint32_t XamUserGetSigninInfo(uint32_t userIndex, uint32_t flags, XUSER_SIGNIN_I
     return 0x00000525; // ERROR_NO_SUCH_USER
 }
 
-uint32_t XamShowSigninUI()
+// Ips3: the profile in slot 0 is already signed in. Report the dialog opening, the sign-in and
+// the dialog closing, which is what the game waits for after "press start" (as Xenia does).
+uint32_t XamShowSigninUI(uint32_t usersNeeded, uint32_t flags)
 {
-    LOG_UTILITY("!!! STUB !!!");
+    fmt::println(stderr, "[xam] XamShowSigninUI({}, {:X})", usersNeeded, flags);
+    XamNotifyEnqueueEvent(9, 1);  // XN_SYS_UI: shown
+    XamNotifyEnqueueEvent(10, 1); // XN_SYS_SIGNINCHANGED: user 0
+    XamNotifyEnqueueEvent(9, 0);  // XN_SYS_UI: hidden
     return 0;
 }
 
@@ -285,10 +291,11 @@ uint32_t XamShowDeviceSelectorUI
     XXOVERLAPPED* overlapped
 )
 {
+    fmt::println(stderr, "[xam] XamShowDeviceSelectorUI(user {}, type {:X})", userIndex, contentType);
     XamNotifyEnqueueEvent(9, true);
     *deviceId = 1;
     XamNotifyEnqueueEvent(9, false);
-    return 0;
+    return XamCompleteOverlapped(overlapped, 0);
 }
 
 uint32_t XamShowDirtyDiscErrorUI()
@@ -311,7 +318,7 @@ uint32_t XamResetInactivity()
 
 uint32_t XamShowMessageBoxUIEx()
 {
-    LOG_UTILITY("!!! STUB !!!");
+    LOG_UTILITY("!!! STUB !!! (the game is waiting on a message box)");
     return 0;
 }
 
@@ -910,7 +917,7 @@ uint32_t XMsgInProcessCall(uint32_t app, uint32_t message, be<uint32_t>* param1,
     return 0;
 }
 
-void XamUserReadProfileSettings
+uint32_t XamUserReadProfileSettings
 (
     uint32_t titleId,
     uint32_t userIndex,
@@ -920,7 +927,7 @@ void XamUserReadProfileSettings
     uint32_t* settingIds,
     be<uint32_t>* bufferSize,
     void* buffer,
-    void* overlapped
+    XXOVERLAPPED* overlapped
 )
 {
     if (buffer != nullptr)
@@ -931,6 +938,8 @@ void XamUserReadProfileSettings
     {
         *bufferSize = 4;
     }
+
+    return XamCompleteOverlapped(overlapped, 0);
 }
 
 uint32_t NetDll_WSAStartup()
@@ -1234,7 +1243,7 @@ uint32_t ExCreateThread(be<uint32_t>* handle, uint32_t stackSize, be<uint32_t>* 
 
     uint32_t hostThreadId;
 
-    *handle = GetKernelHandle(GuestThread::Start({ startAddress, startContext, creationFlags }, &hostThreadId));
+    *handle = GetKernelHandle(GuestThread::Start({ startAddress, startContext, creationFlags, xApiThreadStartup }, &hostThreadId));
 
     if (threadId != nullptr)
         *threadId = hostThreadId;

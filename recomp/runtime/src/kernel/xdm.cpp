@@ -41,6 +41,10 @@ bool IsInvalidKernelObject(void* obj)
 
 void ips3::TraceCall(const char* name, const PPCContext& ctx, bool after)
 {
+    static const std::string filter = [] { std::string f = getenv("IPS3_TRACE"); return f == "1" ? std::string() : f; }();
+    if (!filter.empty() && std::string_view(name).find(filter) == std::string_view::npos)
+        return;
+
     if (after)
         fmt::println(stderr, "[trace {:5}] {} -> {:08X}", GuestThread::GetCurrentThreadId(), name, ctx.r3.u32);
     else

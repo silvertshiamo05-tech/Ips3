@@ -69,3 +69,4 @@ include(xenia_gpu.cmake)
 target_compile_options(bayonetta PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/src/stdafx.h>")
 target_link_libraries(bayonetta PRIVATE BayonettaPPC XeniaGpu XenonUtils fmt::fmt xxHash::xxhash Threads::Threads SDL2::SDL2-static)
+set_target_properties(bayonetta PROPERTIES ENABLE_EXPORTS ON) # function names in crash backtraces

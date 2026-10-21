@@ -155,12 +155,22 @@ uint32_t GuestThread::Start(const GuestThreadParams& params)
     const auto cpuNumber = procMask == 0 ? 0 : 7 - std::countl_zero(procMask);
 
     GuestThreadContext ctx(cpuNumber);
-    ctx.ppcContext.r3.u64 = params.value;
+    uint32_t entry = params.function;
+    if (params.startup != 0)
+    {
+        entry = params.startup;
+        ctx.ppcContext.r3.u64 = params.function;
+        ctx.ppcContext.r4.u64 = params.value;
+    }
+    else
+    {
+        ctx.ppcContext.r3.u64 = params.value;
+    }
 
     // Ips3: ExTerminateThread unwinds back here.
     try
     {
-        g_memory.FindFunction(params.function)(ctx.ppcContext, g_memory.base);
+        g_memory.FindFunction(entry)(ctx.ppcContext, g_memory.base);
     }
     catch (const GuestThreadExit& exit)
     {

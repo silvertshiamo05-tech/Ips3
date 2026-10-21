@@ -46,6 +46,7 @@ namespace
 	{
 		uint32_t at, hold;
 		uint16_t button;
+		bool logged = false;
 	};
 
 	uint16_t ButtonByName(const std::string& name)
@@ -82,7 +83,7 @@ namespace
 			if (a == std::string::npos || b == std::string::npos)
 				continue;
 			presses.push_back({ uint32_t(std::stoul(item.substr(0, a))), uint32_t(std::stoul(item.substr(b + 1))),
-				ButtonByName(item.substr(a + 1, b - a - 1)) });
+				ButtonByName(item.substr(a + 1, b - a - 1)), false });
 		}
 		return presses;
 	}
@@ -165,9 +166,18 @@ namespace
 
 			const uint32_t now = uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
 				std::chrono::steady_clock::now() - start).count());
-			for (const auto& press : script)
+			for (auto& press : script)
+			{
 				if (now >= press.at && now < press.at + press.hold)
+				{
 					state.buttons |= press.button;
+					if (!press.logged)
+					{
+						press.logged = true;
+						fmt::println(stderr, "[host] scripted press {:04X} at {} ms", press.button, now);
+					}
+				}
+			}
 
 			hid::SetHostState(0, state);
 

@@ -348,7 +348,8 @@ T GuestToHostFunction(const TFunction& func, TArgs&&... argv)
     }
 }
 
-// Ips3: IPS3_TRACE=1 in the environment logs every kernel call with its first arguments and result.
+// Ips3: IPS3_TRACE=1 in the environment logs every kernel call with its first arguments and result;
+// IPS3_TRACE=<text> only the calls whose name contains that text (e.g. "Xam").
 namespace ips3
 {
     inline bool TraceEnabled()

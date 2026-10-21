@@ -13,6 +13,13 @@ void XamRootCreate(const std::string_view& root, const std::string_view& path);
 
 uint32_t XamNotifyCreateListener(uint64_t qwAreas);
 void XamNotifyEnqueueEvent(uint32_t dwId, uint32_t dwParam); // i made it the fuck up
+// Ips3: finishes an asynchronous XAM request at once. Without an XOVERLAPPED it returns `result`;
+// with one it stores the result, signals the event and returns ERROR_IO_PENDING, as XAM does.
+// Ips3: the one local profile's XUID (offline XUIDs have the top nibble E). Every XAM call that
+// reports a XUID must agree on it, or the game reports "No active profile".
+constexpr uint64_t XAM_OFFLINE_XUID = 0xE000000000000001ull;
+
+uint32_t XamCompleteOverlapped(XXOVERLAPPED* overlapped, uint32_t result, uint32_t length = 0);
 bool XNotifyGetNext(uint32_t hNotification, uint32_t dwMsgFilter, be<uint32_t>* pdwId, be<uint32_t>* pParam);
 
 uint32_t XamShowMessageBoxUI(uint32_t dwUserIndex, be<uint16_t>* wszTitle, be<uint16_t>* wszText, uint32_t cButtons,
@@ -28,6 +35,6 @@ uint32_t XamContentCreateEx(uint32_t dwUserIndex, const char* szRootName, const 
 uint32_t XamContentGetDeviceData(uint32_t DeviceID, XDEVICE_DATA* pDeviceData);
 uint32_t XamContentClose(const char* szRootName, XXOVERLAPPED* pOverlapped);
 
-uint32_t XamInputGetCapabilities(uint32_t unk, uint32_t userIndex, uint32_t flags, XAMINPUT_CAPABILITIES* caps);
+uint32_t XamInputGetCapabilities(uint32_t userIndex, uint32_t flags, XAMINPUT_CAPABILITIES* caps);
 uint32_t XamInputGetState(uint32_t userIndex, uint32_t flags, XAMINPUT_STATE* state);
 uint32_t XamInputSetState(uint32_t userIndex, uint32_t flags, XAMINPUT_VIBRATION* vibration);
