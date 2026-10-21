@@ -4,6 +4,8 @@
 
 #include <ips3_gpu.h>
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
@@ -45,6 +47,8 @@ namespace
 			else if (key == "async_gpu_submit") settings.asyncGpuSubmit = value != 0;
 			else if (key == "resolution_scale") settings.resolutionScale = std::clamp(value, 1, 2);
 			else if (key == "status_log") settings.statusLog = value != 0;
+			else if (key == "render_path") settings.renderPath = std::clamp(value, 0, 1);
+			else if (key == "metal_argument_buffers") settings.metalArgumentBuffers = value != 0;
 		}
 		return settings;
 	}
@@ -77,6 +81,19 @@ void host::ApplyStartupSettings()
 	setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", s.asyncGpuSubmit ? "0" : "1", 1);
 	setenv("IPS3_FAST_CORES", s.fastCores ? "1" : "0", 1);
 	ips3_gpu_set_resolution_scale(uint32_t(s.resolutionScale));
+	if (!s.metalArgumentBuffers)
+		setenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS", "0", 1);
+	if (s.renderPath == 1)
+	{
+		// Xenia settings go through IPS3_XENIA (read when the GPU starts).
+		std::string xenia = getenv("IPS3_XENIA") ? getenv("IPS3_XENIA") : "";
+		xenia += std::string(xenia.empty() ? "" : ";") + "render_target_path_vulkan = \"fsi\"";
+		setenv("IPS3_XENIA", xenia.c_str(), 1);
+	}
+	fmt::println(stderr, "[settings] resolution {}x, render path {}, Metal argument buffers {}, async GPU submit {}, "
+		"fast cores {}, sound {}", s.resolutionScale, s.renderPath == 1 ? "interlock" : "framebuffers",
+		s.metalArgumentBuffers ? "on" : "off", s.asyncGpuSubmit ? "on" : "off", s.fastCores ? "on" : "off",
+		s.sound ? "on" : "off");
 }
 
 bool host::MenuEnabled()

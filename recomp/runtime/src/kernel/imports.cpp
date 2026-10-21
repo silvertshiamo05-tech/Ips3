@@ -1193,6 +1193,15 @@ uint32_t NtCreateSemaphore(be<uint32_t>* Handle, XOBJECT_ATTRIBUTES* ObjectAttri
 
 uint32_t NtReleaseSemaphore(Semaphore* Handle, uint32_t ReleaseCount, int32_t* PreviousCount)
 {
+    // A handle the game closed already (seen on the iPad after ~25 minutes): refuse it.
+    if (!IsLiveKernelObject(Handle))
+    {
+        static std::atomic<uint32_t> reported{ 0 };
+        if (reported++ < 8)
+            fmt::println(stderr, "[kernel] NtReleaseSemaphore on a closed handle {:08X}", g_memory.MapVirtual(Handle));
+        return 0xC0000008; // STATUS_INVALID_HANDLE
+    }
+
     uint32_t previousCount;
     Handle->Release(ReleaseCount, &previousCount);
 

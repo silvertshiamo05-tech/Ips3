@@ -94,11 +94,18 @@ struct KernelObject
     }
 };
 
+// Ips3: the kernel objects that exist, so a call with a handle the game already closed can be
+// refused instead of touching freed memory.
+void RegisterKernelObject(KernelObject* obj);
+bool IsLiveKernelObject(const void* obj);
+
 template<typename T, typename... Args>
 inline T* CreateKernelObject(Args&&... args)
 {
     static_assert(std::is_base_of_v<KernelObject, T>);
-    return g_userHeap.AllocPhysical<T>(std::forward<Args>(args)...);
+    T* obj = g_userHeap.AllocPhysical<T>(std::forward<Args>(args)...);
+    RegisterKernelObject(obj);
+    return obj;
 }
 
 template<typename T = KernelObject>

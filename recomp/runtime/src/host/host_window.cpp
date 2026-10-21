@@ -434,6 +434,12 @@ namespace
 			[] { return OnOff(S().fastCores); }, [](int) { S().fastCores = !S().fastCores; }, MenuAction::None },
 		{ "ASYNC GPU SUBMIT", "SEND GPU WORK WITHOUT WAITING. TURN OFF IF THE PICTURE GLITCHES",
 			[] { return OnOff(S().asyncGpuSubmit); }, [](int) { S().asyncGpuSubmit = !S().asyncGpuSubmit; }, MenuAction::None },
+		{ "RENDER PATH", "INTERLOCK DOES XBOX-STYLE BLENDING IN SHADERS: NO RENDER TARGET COPIES",
+			[] { return std::string(S().renderPath == 1 ? "INTERLOCK" : "FRAMEBUFFERS"); },
+			[](int) { S().renderPath = 1 - S().renderPath; }, MenuAction::None },
+		{ "METAL ARGUMENT BUFFERS", "HOW TEXTURES AND BUFFERS ARE HANDED TO THE GPU. TRY BOTH",
+			[] { return OnOff(S().metalArgumentBuffers); },
+			[](int) { S().metalArgumentBuffers = !S().metalArgumentBuffers; }, MenuAction::None },
 		{ "STATUS LOG", "DIAGNOSTIC LINES IN BAYONETTA-LOG.TXT EVERY 5 SECONDS",
 			[] { return OnOff(S().statusLog); }, [](int) { S().statusLog = !S().statusLog; }, MenuAction::None },
 #if IPS3_MOBILE

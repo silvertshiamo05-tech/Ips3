@@ -20,6 +20,7 @@
 #include <host/mobile.h>
 #include <host/settings.h>
 #include <host/thread_usage.h>
+#include <host/thread_sampler.h>
 
 #include <cpu/guest_thread.h>
 #include <kernel/function.h>
@@ -204,6 +205,7 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
     // the game's code, its frames and the GPU are moving when the screen is not.
     if ((IPS3_MOBILE && host::CurrentSettings().statusLog) || getenv("IPS3_HEARTBEAT"))
     {
+        host::StartThreadSampler();
         std::thread([]
         {
             const auto begin = std::chrono::steady_clock::now();
@@ -230,6 +232,7 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
                     host::ThreadUsage(), (waitNs - lastWaitNs) / 1000000, waits - lastWaits);
                 lastWaitNs = waitNs;
                 lastWaits = waits;
+                fmt::print(stderr, "{}", host::ThreadSamplerReport());
                 const bool stalled = frames == lastFrames;
                 lastFrames = frames;
                 fmt::println(stderr, "[status] {}s: kernel calls {} (last {}), frames {}, GPU ring written {} read {} "

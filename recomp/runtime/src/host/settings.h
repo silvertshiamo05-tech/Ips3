@@ -16,6 +16,8 @@ namespace host
 		bool asyncGpuSubmit = true; // MoltenVK hands work to the GPU without waiting
 		int resolutionScale = 1;    // the GPU renders at 1x or 2x the console's resolution
 		bool statusLog = true;      // the [status] lines in the log
+		int renderPath = 0;         // 0: host framebuffers (Xenia's default), 1: pixel shader interlock
+		bool metalArgumentBuffers = true; // MoltenVK binds resources through Metal argument buffers
 	};
 
 	// The settings in effect (loaded once, the first time).

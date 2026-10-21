@@ -1,6 +1,8 @@
 #include <stdafx.h>
 
 #include <deque>
+#include <mutex>
+#include <unordered_set>
 #include "xdm.h"
 #include <condition_variable>
 #include <cpu/guest_thread.h>
@@ -9,8 +11,30 @@
 
 Mutex g_kernelLock;
 
+namespace
+{
+    std::mutex g_liveObjectsMutex;
+    std::unordered_set<const void*> g_liveObjects;
+}
+
+void RegisterKernelObject(KernelObject* obj)
+{
+    std::lock_guard lock(g_liveObjectsMutex);
+    g_liveObjects.insert(obj);
+}
+
+bool IsLiveKernelObject(const void* obj)
+{
+    std::lock_guard lock(g_liveObjectsMutex);
+    return g_liveObjects.contains(obj);
+}
+
 void DestroyKernelObject(KernelObject* obj)
 {
+    {
+        std::lock_guard lock(g_liveObjectsMutex);
+        g_liveObjects.erase(obj);
+    }
     obj->~KernelObject();
     g_userHeap.Free(obj);
 }
