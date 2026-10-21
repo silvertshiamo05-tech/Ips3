@@ -139,9 +139,21 @@ namespace
 
 std::shared_ptr<DiscImage::Disc> DiscImage::Open(const std::filesystem::path& path)
 {
-	const int fd = open(path.c_str(), O_RDONLY);
+	// A file the system picker opened (Android: /proc/self/fd/N) is used through that
+	// descriptor: reopening the path checks the app's own permission to the file, which it
+	// may not have.
+	int fd = -1;
+	const std::string text = path.string();
+	constexpr std::string_view FD_PREFIX = "/proc/self/fd/";
+	if (text.starts_with(FD_PREFIX))
+		fd = dup(atoi(text.c_str() + FD_PREFIX.size()));
 	if (fd < 0)
+		fd = open(path.c_str(), O_RDONLY);
+	if (fd < 0)
+	{
+		fmt::println(stderr, "[disc] {}: cannot open ({})", text, strerror(errno));
 		return nullptr;
+	}
 
 	for (uint64_t partition : PARTITION_OFFSETS)
 	{
@@ -167,6 +179,12 @@ std::shared_ptr<DiscImage::Disc> DiscImage::Open(const std::filesystem::path& pa
 		return disc;
 	}
 
+	uint8_t probe[SECTOR_SIZE];
+	if (!ReadAt(fd, 0, probe, sizeof(probe)))
+		fmt::println(stderr, "[disc] {}: cannot read ({})", text, strerror(errno));
+	else
+		fmt::println(stderr, "[disc] {}: no XDVDFS volume at any known offset ({} bytes)", text,
+			uint64_t(lseek(fd, 0, SEEK_END)));
 	close(fd);
 	return nullptr;
 }

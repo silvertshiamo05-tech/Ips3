@@ -151,7 +151,12 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
         auto disc = DiscImage::Open(g_gamePath);
         if (disc == nullptr)
         {
-            host::ShowError(fmt::format("{} is not an Xbox 360 disc image.", g_gamePath.filename().string()));
+            // A picked file's path can be its descriptor (/proc/self/fd/N): name the file instead.
+            std::error_code ec;
+            const auto target = std::filesystem::read_symlink(g_gamePath, ec);
+            const auto name = (ec ? g_gamePath : target).filename().string();
+            host::ShowError(fmt::format("{} could not be read as an Xbox 360 disc image. "
+                "bayonetta-log.txt says why.", name));
             return false;
         }
         DiscImage::Mount(std::move(disc));
