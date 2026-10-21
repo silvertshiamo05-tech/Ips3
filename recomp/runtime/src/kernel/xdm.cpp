@@ -1,4 +1,6 @@
 #include <stdafx.h>
+
+#include <deque>
 #include "xdm.h"
 #include <condition_variable>
 #include <cpu/guest_thread.h>
@@ -37,6 +39,31 @@ bool IsKernelObject(void* obj)
 bool IsInvalidKernelObject(void* obj)
 {
     return obj == GetInvalidKernelObject();
+}
+
+namespace
+{
+    std::mutex g_activityMutex;
+    std::deque<ips3::ThreadActivity> g_activities; // a deque: entries never move
+}
+
+ips3::ThreadActivity& ips3::CurrentThreadActivity(uint32_t pcr)
+{
+    thread_local ThreadActivity* activity = nullptr;
+    if (activity == nullptr)
+    {
+        std::lock_guard lock(g_activityMutex);
+        activity = &g_activities.emplace_back();
+        activity->pcr = pcr;
+    }
+    return *activity;
+}
+
+void ips3::ForEachThreadActivity(const std::function<void(const ThreadActivity&)>& visit)
+{
+    std::lock_guard lock(g_activityMutex);
+    for (const auto& activity : g_activities)
+        visit(activity);
 }
 
 void ips3::TraceCall(const char* name, const PPCContext& ctx, bool after)

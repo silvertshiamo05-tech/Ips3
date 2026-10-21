@@ -531,7 +531,7 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 				if (line.empty() || line[0] != '[' || line.starts_with("[mvk"))
 					continue;
 				tail.push_back(line.substr(0, 160));
-				if (tail.size() > 12)
+				if (tail.size() > 40)
 					tail.pop_front();
 			}
 			std::string text = "No picture yet. Screenshot this for the developer:\n\n";

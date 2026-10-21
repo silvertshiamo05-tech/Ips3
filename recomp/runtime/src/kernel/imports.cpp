@@ -60,7 +60,7 @@ struct Event final : KernelObject, HostObject<XKEVENT>
                 while (true)
                 {
                     bool expected = true;
-                    if (signaled.compare_exchange_weak(expected, false))
+                    if (signaled.compare_exchange_strong(expected, false))
                         break;
 
                     signaled.wait(expected);
@@ -120,7 +120,7 @@ struct Semaphore final : KernelObject, HostObject<XKSEMAPHORE>
             uint32_t currentCount = count.load();
             if (currentCount != 0)
             {
-                if (count.compare_exchange_weak(currentCount, currentCount - 1))
+                if (count.compare_exchange_strong(currentCount, currentCount - 1))
                     return STATUS_SUCCESS;
             }
 
@@ -134,7 +134,7 @@ struct Semaphore final : KernelObject, HostObject<XKSEMAPHORE>
                 currentCount = count.load();
                 if (currentCount != 0)
                 {
-                    if (count.compare_exchange_weak(currentCount, currentCount - 1))
+                    if (count.compare_exchange_strong(currentCount, currentCount - 1))
                         return STATUS_SUCCESS;
                 }
                 else
@@ -658,11 +658,13 @@ void RtlEnterCriticalSection(XRTL_CRITICAL_SECTION* cs)
 
     std::atomic_ref owningThread(cs->OwningThread);
 
+    // compare_exchange_strong throughout this file: a weak one may fail spuriously on ARM
+    // (LL/SC), and the waits below would then sleep on a value that never changes.
     while (true) 
     {
         uint32_t previousOwner = 0;
 
-        if (owningThread.compare_exchange_weak(previousOwner, thisThread) || previousOwner == thisThread)
+        if (owningThread.compare_exchange_strong(previousOwner, thisThread) || previousOwner == thisThread)
         {
             cs->RecursionCount++;
             return;
@@ -710,7 +712,7 @@ void KfAcquireSpinLock(uint32_t* spinLock)
     while (true)
     {
         uint32_t expected = 0;
-        if (spinLockRef.compare_exchange_weak(expected, g_ppcContext->r13.u32))
+        if (spinLockRef.compare_exchange_strong(expected, g_ppcContext->r13.u32))
             break;
 
         std::this_thread::yield();
@@ -749,7 +751,7 @@ void KeAcquireSpinLockAtRaisedIrql(uint32_t* spinLock)
     while (true)
     {
         uint32_t expected = 0;
-        if (spinLockRef.compare_exchange_weak(expected, g_ppcContext->r13.u32))
+        if (spinLockRef.compare_exchange_strong(expected, g_ppcContext->r13.u32))
             break;
 
         std::this_thread::yield();
@@ -1067,7 +1069,7 @@ bool RtlTryEnterCriticalSection(XRTL_CRITICAL_SECTION* cs)
 
     uint32_t previousOwner = 0;
 
-    if (owningThread.compare_exchange_weak(previousOwner, thisThread) || previousOwner == thisThread)
+    if (owningThread.compare_exchange_strong(previousOwner, thisThread) || previousOwner == thisThread)
     {
         cs->RecursionCount++;
         return true;

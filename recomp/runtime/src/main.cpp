@@ -220,6 +220,21 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
                     ips3::g_kernelCalls.load(), ips3::g_lastKernelCall.load(), ips3_gpu_swap_count(),
                     written, cpRead, cpPackets, cpOpcode, cpExecuting ? ", executing" : "", vblanks, cpInterrupts,
                     triggers, arms);
+                // What each guest thread is doing (the ones that made a call since the last line,
+                // or are blocked inside one).
+                ips3::ForEachThreadActivity([](const ips3::ThreadActivity& activity)
+                {
+                    const char* call = activity.call.load();
+                    const uint32_t argument = activity.argument.load();
+                    std::string detail;
+                    if (activity.inside && strcmp(call, "RtlEnterCriticalSection") == 0 && argument)
+                    {
+                        auto* section = reinterpret_cast<XRTL_CRITICAL_SECTION*>(g_memory.base + argument);
+                        detail = fmt::format(", owner {:08X}", section->OwningThread);
+                    }
+                    fmt::println(stderr, "[thread {:08X}] {} {}({:08X}){}, {} calls", activity.pcr,
+                        activity.inside ? "in" : "after", call, argument, detail, activity.calls.load());
+                });
             }
         }).detach();
     }

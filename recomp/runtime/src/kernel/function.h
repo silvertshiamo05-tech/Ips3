@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cpu/ppc_context.h>
+#include <functional>
 #include <array>
 #include "xbox.h"
 #include "memory.h"
@@ -363,6 +364,19 @@ namespace ips3
     // Progress counters for the status line (main.cpp): kernel calls made, and the latest.
     inline std::atomic<uint64_t> g_kernelCalls{ 0 };
     inline std::atomic<const char*> g_lastKernelCall{ "" };
+
+    // Per guest thread: its latest kernel call, its first argument, and whether the thread is
+    // still inside it -- what each thread is blocked on when the game stops.
+    struct ThreadActivity
+    {
+        uint32_t pcr = 0;
+        std::atomic<const char*> call{ "" };
+        std::atomic<uint32_t> argument{ 0 };
+        std::atomic<bool> inside{ false };
+        std::atomic<uint64_t> calls{ 0 };
+    };
+    ThreadActivity& CurrentThreadActivity(uint32_t pcr);
+    void ForEachThreadActivity(const std::function<void(const ThreadActivity&)>& visit);
 }
 
 #define GUEST_FUNCTION_HOOK(subroutine, function) \
@@ -371,7 +385,13 @@ namespace ips3
         if (ips3::TraceEnabled()) ips3::TraceCall(#function, ctx, false); \
         ips3::g_kernelCalls.fetch_add(1, std::memory_order_relaxed); \
         ips3::g_lastKernelCall.store(#function, std::memory_order_relaxed); \
+        ips3::ThreadActivity& ips3Activity = ips3::CurrentThreadActivity(ctx.r13.u32); \
+        ips3Activity.call.store(#function, std::memory_order_relaxed); \
+        ips3Activity.argument.store(ctx.r3.u32, std::memory_order_relaxed); \
+        ips3Activity.calls.fetch_add(1, std::memory_order_relaxed); \
+        ips3Activity.inside.store(true, std::memory_order_relaxed); \
         HostToGuestFunction<function>(ctx, base); \
+        ips3Activity.inside.store(false, std::memory_order_relaxed); \
         if (ips3::TraceEnabled()) ips3::TraceCall(#function, ctx, true); \
     }
 
