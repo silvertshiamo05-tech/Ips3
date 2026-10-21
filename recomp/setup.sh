@@ -88,8 +88,12 @@ if [ "$(git -C "$BUILD/SDL" rev-parse -q --verify HEAD 2>/dev/null)" != "$SDL_CO
 fi
 
 # fmt and xxhash: the copies XenonRecomp already brings, so the runtime links one of each.
-ln -sfn "$BUILD/XenonRecomp/thirdparty/fmt" "$XENIA/third_party/fmt"
-ln -sfn "$BUILD/XenonRecomp/thirdparty/xxHash" "$XENIA/third_party/xxhash"
+# (Xenia's checkout can leave empty directories for its own copies, which ln would link into.)
+for lib in fmt:fmt xxHash:xxhash; do
+	link="$XENIA/third_party/${lib#*:}"
+	[ -L "$link" ] || [ ! -d "$link" ] || rmdir "$link"
+	ln -sfn "$BUILD/XenonRecomp/thirdparty/${lib%%:*}" "$link"
+done
 
 for patch in "$HERE"/patches/xenia/*.patch; do
 	[ -e "$patch" ] || continue

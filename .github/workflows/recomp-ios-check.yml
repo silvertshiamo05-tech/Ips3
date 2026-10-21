@@ -33,7 +33,7 @@ jobs:
         run: |
           recomp/runtime/ci/make_stub_ppc.sh "$RUNNER_TEMP/stub"
           cmake -S recomp/runtime -B build-ios -G Ninja \
-            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=16.3 \
             -DCMAKE_BUILD_TYPE=Release \
             -DPPC_DIR="$RUNNER_TEMP/stub/ppc" -DMOLTENVK_LIB="$MOLTENVK_LIB"
 
