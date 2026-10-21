@@ -30,6 +30,10 @@ void ips3_gpu_set_interrupt_callback(uint32_t callback, uint32_t user_data);
 // the front buffer's texture fetch constant (6 big-endian dwords).
 void ips3_gpu_write_swap(uint32_t* buffer, const uint32_t* fetch, uint32_t width, uint32_t height);
 uint64_t ips3_gpu_swap_count();
+// The command ring: where the game has written to, and where the GPU has read to.
+void ips3_gpu_ring_state(uint32_t* write_pointer, uint32_t* read_pointer);
+// Write watches armed on guest memory the GPU holds copies of, and how many fired.
+void ips3_watch_stats(uint64_t* arms, uint64_t* triggers);
 
 // Saves the last presented frame as a PNG.
 // Reads back the latest guest output as tightly packed R8G8B8X8 pixels (for host windows).

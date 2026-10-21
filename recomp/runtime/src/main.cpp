@@ -195,6 +195,28 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
         return false;
     }
 
+    // A status line every 5 s (phones and tablets always, else IPS3_HEARTBEAT=1): shows whether
+    // the game's code, its frames and the GPU are moving when the screen is not.
+    if (IPS3_MOBILE || getenv("IPS3_HEARTBEAT"))
+    {
+        std::thread([]
+        {
+            const auto begin = std::chrono::steady_clock::now();
+            for (;;)
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+                uint32_t written, read; // (Xenia keeps the read pointer to itself here)
+                uint64_t arms, triggers;
+                ips3_gpu_ring_state(&written, &read);
+                ips3_watch_stats(&arms, &triggers);
+                fmt::println(stderr, "[status] {}s: kernel calls {} (last {}), frames {}, GPU ring at {}, watches {}/{}",
+                    std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - begin).count(),
+                    ips3::g_kernelCalls.load(), ips3::g_lastKernelCall.load(), ips3_gpu_swap_count(),
+                    written, triggers, arms);
+            }
+        }).detach();
+    }
+
     fmt::println("Starting guest thread at {:08X}", entry);
     if (ownThread)
         GuestThread::Start({ entry, 0, 0 }, nullptr); // a host thread with a full-size stack

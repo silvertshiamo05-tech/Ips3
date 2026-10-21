@@ -359,12 +359,18 @@ namespace ips3
     }
 
     void TraceCall(const char* name, const PPCContext& ctx, bool after);
+
+    // Progress counters for the status line (main.cpp): kernel calls made, and the latest.
+    inline std::atomic<uint64_t> g_kernelCalls{ 0 };
+    inline std::atomic<const char*> g_lastKernelCall{ "" };
 }
 
 #define GUEST_FUNCTION_HOOK(subroutine, function) \
     PPC_FUNC(subroutine) \
     { \
         if (ips3::TraceEnabled()) ips3::TraceCall(#function, ctx, false); \
+        ips3::g_kernelCalls.fetch_add(1, std::memory_order_relaxed); \
+        ips3::g_lastKernelCall.store(#function, std::memory_order_relaxed); \
         HostToGuestFunction<function>(ctx, base); \
         if (ips3::TraceEnabled()) ips3::TraceCall(#function, ctx, true); \
     }
