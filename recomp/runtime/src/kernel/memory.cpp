@@ -4,7 +4,7 @@
 
 #ifdef __APPLE__
 #include <mach/mach.h>
-#include <mach/mach_vm.h>
+#include <mach/vm_map.h>
 #endif
 
 // Ips3: physical memory and its views.
@@ -38,11 +38,12 @@ static bool MapPhysicalViews(uint8_t* base)
 #ifdef __APPLE__
     for (const auto& view : PHYSICAL_ALIASES)
     {
-        mach_vm_address_t target = mach_vm_address_t(base + view.guest);
+        // vm_remap, not mach_vm_remap: iOS's SDK has no mach_vm.h (the types are 64-bit either way).
+        vm_address_t target = vm_address_t(base + view.guest);
         vm_prot_t current, maximum;
-        const kern_return_t kr = mach_vm_remap(mach_task_self(), &target, view.size, 0,
+        const kern_return_t kr = vm_remap(mach_task_self(), &target, view.size, 0,
             VM_FLAGS_FIXED | VM_FLAGS_OVERWRITE, mach_task_self(),
-            mach_vm_address_t(base + PHYSICAL_BASE + view.physical), FALSE, &current, &maximum, VM_INHERIT_NONE);
+            vm_address_t(base + PHYSICAL_BASE + view.physical), FALSE, &current, &maximum, VM_INHERIT_NONE);
         if (kr != KERN_SUCCESS)
         {
             fprintf(stderr, "[memory] cannot alias physical memory at %08X (%d)\n", view.guest, kr);
