@@ -94,13 +94,17 @@ Added on top of UnleashedRecomp:
   On Linux it renders with Mesa's llvmpipe (software Vulkan); on iOS the same backend is
   meant to run on MoltenVK.
 
-Run from the full disc image, the game plays its whole boot sequence -- the Sofdec intro
-and PlatinumGames movies with their ADX audio, the Dolby Digital and CRIWARE logos -- and then
-the **in-engine prologue cutscene**, through Xenia's GPU on llvmpipe (software Vulkan, about
-12 frames a second). Audio is mixed by the game and handed to the runtime, but not played on
-the host yet.
+Run from the full disc image, the game plays its boot movies and logos, the in-engine prologue,
+reaches the **title screen**, and with controller input goes through the main menu, save-device
+selection, auto-save, difficulty select and into a **new game** (the opening cutscene, with the
+pause menu working), on llvmpipe (software Vulkan, about 10 frames a second).
 
-Next: host audio output, input, then MoltenVK on iOS.
+Host side (SDL2, `src/host`): audio out (the game's 5.1 mix downmixed to stereo; the title and
+menu music is still silent) and game controllers. For headless runs, `IPS3_INPUT` scripts pad
+presses and `IPS3_AUDIO_WAV` records the output. Linux desktops need the ALSA or PulseAudio
+development packages for SDL's audio.
+
+Next: the menu music, MoltenVK on iOS, then a test IPA.
 
 ## Tools
 
