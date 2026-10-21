@@ -8,6 +8,7 @@
 // invalidation callbacks, unwatches what they say is safe (at most 4 MiB around the write)
 // and makes those pages writable again, and the write is retried.
 
+#include <atomic>
 #include <csignal>
 #include <cstring>
 #include <vector>
@@ -38,6 +39,9 @@ xe::Memory* g_memory_instance = nullptr;
 size_t g_page_size = 0;
 uint32_t g_page_shift = 0;
 std::vector<uint64_t> g_watched;  // one bit per host page of physical memory
+
+std::atomic<uint64_t> g_watch_triggers{0};
+std::atomic<uint64_t> g_watch_arms{0};
 
 struct sigaction g_previous_segv;
 struct sigaction g_previous_bus;
@@ -165,6 +169,7 @@ void Memory::EnablePhysicalMemoryAccessCallbacks(uint32_t physical_address, uint
   const uint32_t last = (physical_address + length - 1) >> g_page_shift;
 
   auto lock = global_critical_region_.Acquire();
+  g_watch_arms++;
   uint32_t run_start = UINT32_MAX;
   auto flush = [&](uint32_t end) {
     if (run_start != UINT32_MAX) {
@@ -209,6 +214,7 @@ bool Memory::TriggerPhysicalMemoryCallbacks(global_unique_lock_type global_lock_
     return false;
   }
 
+  g_watch_triggers++;
   const uint32_t start = first << g_page_shift;
   const uint32_t span = ((last + 1) << g_page_shift) - start;
 
@@ -320,4 +326,9 @@ void ips3_install_write_watch_handler() {
   sigemptyset(&action.sa_mask);
   sigaction(SIGSEGV, &action, &g_previous_segv);
   sigaction(SIGBUS, &action, &g_previous_bus);
+}
+
+void ips3_watch_stats(uint64_t* arms, uint64_t* triggers) {
+  *arms = g_watch_arms;
+  *triggers = g_watch_triggers;
 }

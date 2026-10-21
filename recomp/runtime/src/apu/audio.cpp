@@ -40,6 +40,15 @@ namespace
 			ctx.r3.u64 = g_callbackArg; // guest address of the wrapped argument
 			g_memory.FindFunction(callback)(ctx, g_memory.base);
 
+			static uint64_t calls = 0;
+			static auto lastReport = std::chrono::steady_clock::now();
+			calls++;
+			if (getenv("IPS3_TRACE_AUDIO") && std::chrono::steady_clock::now() - lastReport > std::chrono::seconds(5))
+			{
+				lastReport = std::chrono::steady_clock::now();
+				fmt::println(stderr, "[audio] {} callbacks, {} frames submitted", calls, g_framesSubmitted.load());
+			}
+
 			// Fell far behind (e.g. a debugger pause): don't replay the missed frames.
 			if (std::chrono::steady_clock::now() - next > std::chrono::milliseconds(100))
 				next = std::chrono::steady_clock::now();

@@ -31,6 +31,7 @@ DECLARE_string(occlusion_query);
 extern uint8_t* ips3_guest_membase;
 xe::Memory* ips3_create_gpu_memory();
 void ips3_install_write_watch_handler();
+void ips3_watch_stats(uint64_t* arms, uint64_t* triggers);
 
 namespace {
 
@@ -131,8 +132,11 @@ bool ips3_gpu_start(uint8_t* guest_membase) {
       for (int n = 0; g_gpu.running; n++) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
         const std::string path = dir + "/frame_" + std::to_string(n) + ".png";
+        uint64_t arms, triggers;
+        ips3_watch_stats(&arms, &triggers);
         if (ips3_gpu_capture_frame(path.c_str())) {
-          XELOGI("Ips3: captured {} (frame {})", path, g_gpu.swaps.load());
+          XELOGI("Ips3: captured {} (frame {}, watches armed {}, triggered {})", path,
+                 g_gpu.swaps.load(), arms, triggers);
         }
       }
     }).detach();
