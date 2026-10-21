@@ -1,3 +1,33 @@
+diff --git a/XenonAnalyse/function.cpp b/XenonAnalyse/function.cpp
+index 34add40..dd51fd2 100644
+--- a/XenonAnalyse/function.cpp
++++ b/XenonAnalyse/function.cpp
+@@ -62,7 +62,7 @@ Function Function::Analyze(const void* code, size_t size, size_t base)
+     #define RESTORE_DATA() if (!blockStack.empty()) data = (dataStart + ((blocks[blockStack.back()].base + blocks[blockStack.back()].size) / sizeof(*data))) - 1; // continue adds one
+ 
+     // TODO: Branch fallthrough
+-    for (; data <= dataEnd ; ++data)
++    for (;; ++data)
+     {
+         const size_t addr = base + ((data - dataStart) * sizeof(*data));
+         if (blockStack.empty())
+@@ -70,6 +70,16 @@ Function Function::Analyze(const void* code, size_t size, size_t base)
+             break; // it's hideover
+         }
+ 
++        // Ips3: a block outside the analysed range (a branch into the next function) is not
++        // followed, but the blocks still pending are. Stopping the walk here used to drop
++        // them, cutting the function short after its first branch out of range.
++        if (data < dataStart || data >= dataEnd)
++        {
++            blockStack.pop_back();
++            RESTORE_DATA();
++            continue;
++        }
++
+         auto& curBlock = blocks[blockStack.back()];
+         DEBUG(const auto blockBase = curBlock.base);
+         const uint32_t instruction = ByteSwap(*data);
 diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
 index fa91527..2bd65c8 100644
 --- a/XenonRecomp/recompiler.cpp

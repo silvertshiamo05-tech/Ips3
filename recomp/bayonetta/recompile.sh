@@ -16,7 +16,7 @@ XEX="${1:?usage: recompile.sh default.xex}"
 [ -x "$BUILD/xex_dump" ] || "$HERE/../setup.sh"
 
 mkdir -p "$PRIVATE/ppc"
-cp "$XEX" "$PRIVATE/default.xex"
+[ "$XEX" -ef "$PRIVATE/default.xex" ] || cp "$XEX" "$PRIVATE/default.xex"
 
 "$BUILD/xex_dump" "$PRIVATE/default.xex" "$PRIVATE/image.bin"
 
