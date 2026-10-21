@@ -27,6 +27,7 @@ add_executable(bayonetta
     src/main.cpp
     src/apu/audio.cpp
     src/hid/hid.cpp
+    src/host/host_sdl.cpp
     src/cpu/guest_thread.cpp
     src/gpu/interrupts.cpp
     src/kernel/heap.cpp
@@ -56,8 +57,15 @@ target_include_directories(bayonetta PRIVATE
 
 find_package(Threads REQUIRED)
 
+# SDL2 (pinned by setup.sh), static: audio output and game controllers.
+set(SDL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build/SDL" CACHE PATH "SDL2 checkout")
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON CACHE BOOL "" FORCE)
+set(SDL_TEST OFF CACHE BOOL "" FORCE)
+add_subdirectory(${SDL_DIR} ${CMAKE_BINARY_DIR}/sdl EXCLUDE_FROM_ALL)
+
 include(xenia_gpu.cmake)
 # UnleashedRecomp's sources assume stdafx.h is always included first (it is their PCH).
 target_compile_options(bayonetta PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/src/stdafx.h>")
-target_link_libraries(bayonetta PRIVATE BayonettaPPC XeniaGpu XenonUtils fmt::fmt xxHash::xxhash Threads::Threads)
+target_link_libraries(bayonetta PRIVATE BayonettaPPC XeniaGpu XenonUtils fmt::fmt xxHash::xxhash Threads::Threads SDL2::SDL2-static)

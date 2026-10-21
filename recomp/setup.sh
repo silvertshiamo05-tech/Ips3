@@ -71,6 +71,17 @@ fetch_pinned FidelityFX-CAS https://github.com/GPUOpen-Effects/FidelityFX-CAS.gi
 fetch_pinned FidelityFX-FSR https://github.com/GPUOpen-Effects/FidelityFX-FSR.git a21ffb8f6c13233ba336352bdff293894c706575
 # Headers only: Xenia loads SPIRV-Tools at run time, for optional validation.
 fetch_pinned SPIRV-Tools https://github.com/KhronosGroup/SPIRV-Tools.git 33e02568181e3312f49a3cf33df470bf96ef293a
+# SDL2 for the runtime's host side: audio output and game controllers (Linux, macOS, iOS).
+SDL_COMMIT=c98c4fbff6d8f3016a3ce6685bf8f43433c3efcc # release-2.30.9
+if [ ! -d "$BUILD/SDL/.git" ]; then
+	git init -q "$BUILD/SDL"
+	git -C "$BUILD/SDL" remote add origin https://github.com/libsdl-org/SDL.git
+fi
+if [ "$(git -C "$BUILD/SDL" rev-parse -q --verify HEAD 2>/dev/null)" != "$SDL_COMMIT" ]; then
+	git -C "$BUILD/SDL" fetch -q --depth 1 origin "$SDL_COMMIT"
+	git -C "$BUILD/SDL" checkout -q FETCH_HEAD
+fi
+
 # fmt and xxhash: the copies XenonRecomp already brings, so the runtime links one of each.
 ln -sfn "$BUILD/XenonRecomp/thirdparty/fmt" "$XENIA/third_party/fmt"
 ln -sfn "$BUILD/XenonRecomp/thirdparty/xxHash" "$XENIA/third_party/xxhash"

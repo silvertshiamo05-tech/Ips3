@@ -415,8 +415,13 @@ uint32_t XamInputGetState(uint32_t userIndex, uint32_t flags, XAMINPUT_STATE* st
 {
     memset(state, 0, sizeof(*state));
 
-    if (hid::IsInputAllowed())
-        hid::GetState(userIndex, state);
+    // Ips3: report unplugged pads as such, or the game sees four controllers.
+    const uint32_t result = hid::GetState(userIndex, state);
+    if (result != ERROR_SUCCESS)
+        return result;
+
+    if (!hid::IsInputAllowed())
+        memset(&state->Gamepad, 0, sizeof(state->Gamepad));
 
     state->Gamepad.wButtons &= ~hid::g_prohibitedButtons;
 

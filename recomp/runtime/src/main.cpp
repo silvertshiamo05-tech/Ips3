@@ -9,6 +9,7 @@
 // <game> is the disc image (.iso) or a folder with the extracted disc. default.xex is read from
 // it unless --xex names another copy.
 
+#include <host/host.h>
 #include <stdafx.h>
 
 #include <cpu/guest_thread.h>
@@ -162,6 +163,7 @@ int main(int argc, char** argv)
 
     // Guest allocations (the loader's included) come from the heaps.
     g_userHeap.Init();
+    host::Init();
 
     if (!ips3_gpu_start(g_memory.base))
     {
