@@ -41,3 +41,16 @@ void Window::SetPresenter(Presenter*) {}
 namespace config {
 void SaveConfig() {}
 }  // namespace config
+
+#if XE_PLATFORM_ANDROID
+#include <android/api-level.h>
+
+#include "xenia/base/main_android.h"
+
+// Xenia's Android app setup (main_android.cc) is not used: SDL's activity runs the runtime.
+namespace xe {
+int32_t GetAndroidApiLevel() { return android_get_device_api_level(); }
+JNIEnv* GetAndroidThreadJniEnv() { return nullptr; }
+jobject GetAndroidApplicationContext() { return nullptr; }
+}  // namespace xe
+#endif

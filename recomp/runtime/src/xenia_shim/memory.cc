@@ -15,7 +15,10 @@
 
 #include <sys/mman.h>
 #include <unistd.h>
+#if !defined(__ANDROID__) || __ANDROID_API__ >= 33
 #include <execinfo.h>
+#define IPS3_HAS_BACKTRACE 1
+#endif
 
 #include "xenia/base/math.h"
 #include "xenia/base/mutex.h"
@@ -335,8 +338,10 @@ void FaultHandler(int signal, siginfo_t* info, void* context) {
   const int length = snprintf(header, sizeof(header), "Ips3: fatal signal %d at address %p\n",
                               signal, info->si_addr);
   write(STDERR_FILENO, header, length);
+#ifdef IPS3_HAS_BACKTRACE
   void* frames[48];
   backtrace_symbols_fd(frames, backtrace(frames, 48), STDERR_FILENO);
+#endif
   ::signal(signal, SIG_DFL);
 }
 

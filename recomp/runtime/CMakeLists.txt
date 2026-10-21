@@ -8,6 +8,9 @@ else()
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
+if(ANDROID)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON) # everything goes into one shared library
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(XENONRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build/XenonRecomp" CACHE PATH "Patched XenonRecomp checkout")
@@ -28,7 +31,14 @@ target_compile_options(BayonettaPPC PRIVATE -w -fno-strict-aliasing)
 # Report indirect calls into code with no recompiled function instead of jumping to 0.
 target_compile_options(BayonettaPPC PRIVATE "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/src/cpu/indirect_call.h")
 
-add_executable(bayonetta
+# Android loads the runtime as libmain.so from SDL's Java activity; elsewhere it is a program.
+if(ANDROID)
+    add_library(bayonetta SHARED)
+    set_target_properties(bayonetta PROPERTIES OUTPUT_NAME main)
+else()
+    add_executable(bayonetta)
+endif()
+target_sources(bayonetta PRIVATE
     src/main.cpp
     src/apu/audio.cpp
     src/hid/hid.cpp
@@ -78,6 +88,12 @@ target_link_libraries(bayonetta PRIVATE BayonettaPPC XeniaGpu XenonUtils fmt::fm
 set_target_properties(bayonetta PROPERTIES ENABLE_EXPORTS ON) # function names in crash backtraces
 if(TARGET SDL2::SDL2main)
     target_link_libraries(bayonetta PRIVATE SDL2::SDL2main) # provides main() on iOS
+endif()
+
+if(ANDROID)
+    # The Android app (android/): SDL's activity plus the disc image picker and log location.
+    target_sources(bayonetta PRIVATE src/host/android_files.cpp)
+    target_link_libraries(bayonetta PRIVATE android log)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")

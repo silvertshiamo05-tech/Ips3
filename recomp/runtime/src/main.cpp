@@ -15,14 +15,9 @@
 #include <stdafx.h>
 #include <host/host.h>
 
-#include <SDL_main.h> // on iOS, SDL runs the app and calls this main
+#include <SDL_main.h> // on iOS and Android, SDL runs the app and calls this main
 
-#ifdef __APPLE__
-#include <TargetConditionals.h>
-#endif
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-#include <host/ios.h>
-#endif
+#include <host/mobile.h>
 
 #include <cpu/guest_thread.h>
 #include <kernel/function.h>
@@ -205,9 +200,9 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
 
 int main(int argc, char** argv)
 {
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-    // No terminal on iOS: the log goes to Documents/bayonetta-log.txt (visible in Files).
-    ios::RedirectLog();
+#if IPS3_MOBILE
+    // No terminal on phones and tablets: the log goes to bayonetta-log.txt in the app's folder.
+    mobile::RedirectLog();
 #endif
 
     std::vector<std::string> args;
@@ -222,9 +217,9 @@ int main(int argc, char** argv)
 
     std::filesystem::path image = args.size() > 0 ? std::filesystem::path(args[0]) : std::filesystem::path();
     std::filesystem::path savePath = args.size() > 1 ? std::filesystem::path(args[1]) : std::filesystem::path();
-#if defined(__APPLE__) && TARGET_OS_IPHONE
+#if IPS3_MOBILE
     if (savePath.empty())
-        savePath = ios::DocumentsPath() / "save";
+        savePath = mobile::DataPath() / "save";
 #endif
 
     host::Init();

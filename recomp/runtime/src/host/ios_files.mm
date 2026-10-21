@@ -2,7 +2,7 @@
 //
 // The 7.8 GB disc image is read in place: the picker hands out a security-scoped URL, which is
 // kept as a bookmark so later launches open the same file without asking again.
-#include "ios.h"
+#include "mobile.h"
 
 #include <SDL_syswm.h>
 
@@ -14,16 +14,16 @@
 
 static NSString* const kBookmarkKey = @"Ips3GameImageBookmark";
 
-std::filesystem::path ios::DocumentsPath()
+std::filesystem::path mobile::DataPath()
 {
     NSArray<NSURL*>* urls = [[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
                                                                    inDomains:NSUserDomainMask];
     return std::filesystem::path(urls.firstObject.path.UTF8String);
 }
 
-void ios::RedirectLog()
+void mobile::RedirectLog()
 {
-    const auto path = DocumentsPath() / "bayonetta-log.txt";
+    const auto path = DataPath() / "bayonetta-log.txt";
     freopen(path.c_str(), "w", stderr);
     freopen(path.c_str(), "a", stdout);
     setvbuf(stderr, nullptr, _IONBF, 0);
@@ -48,7 +48,7 @@ static std::filesystem::path OpenBookmark(NSData* bookmark)
     return std::filesystem::path(url.path.UTF8String);
 }
 
-std::filesystem::path ios::FindGameImage()
+std::filesystem::path mobile::FindGameImage()
 {
     if (NSData* bookmark = [[NSUserDefaults standardUserDefaults] dataForKey:kBookmarkKey])
     {
@@ -58,7 +58,7 @@ std::filesystem::path ios::FindGameImage()
     }
 
     std::error_code ec;
-    for (const auto& entry : std::filesystem::directory_iterator(DocumentsPath(), ec))
+    for (const auto& entry : std::filesystem::directory_iterator(DataPath(), ec))
     {
         auto ext = entry.path().extension().string();
         for (auto& c : ext)
@@ -84,7 +84,17 @@ std::filesystem::path ios::FindGameImage()
 }
 @end
 
-void ios::PickGameImage(SDL_Window* window, std::function<void(const std::filesystem::path&)> picked)
+const char* mobile::PickPrompt()
+{
+    return "Choose your Bayonetta (Xbox 360) disc image (.iso). It is read in place, not copied.\n\n"
+        "You can also put the .iso in this app's Documents folder.";
+}
+
+void mobile::PollPicker()
+{
+}
+
+void mobile::PickGameImage(SDL_Window* window, std::function<void(const std::filesystem::path&)> picked)
 {
     SDL_SysWMinfo info;
     SDL_VERSION(&info.version);

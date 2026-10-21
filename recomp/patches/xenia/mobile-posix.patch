@@ -1,8 +1,21 @@
+diff --git a/src/xenia/base/mutex.cc b/src/xenia/base/mutex.cc
+index 09b671a41..32c1fbfd5 100644
+--- a/src/xenia/base/mutex.cc
++++ b/src/xenia/base/mutex.cc
+@@ -91,7 +91,7 @@ inline int futex_wake(std::atomic<uint32_t>* addr, int count) {
+ 
+ // Only compared for equality, to detect the owner re-entering.
+ inline uint64_t xe_current_thread_id() {
+-  return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pthread_self()));
++  return static_cast<uint64_t>((uintptr_t)pthread_self()); // a pointer or an integer
+ }
+ 
+ }  // namespace
 diff --git a/src/xenia/base/threading_posix.cc b/src/xenia/base/threading_posix.cc
-index 39c2a4e23..8e196f789 100644
+index 39c2a4e23..400706679 100644
 --- a/src/xenia/base/threading_posix.cc
 +++ b/src/xenia/base/threading_posix.cc
-@@ -51,6 +51,54 @@
+@@ -51,6 +51,59 @@
  #define XE_HAS_SIGEV_THREAD_ID 0
  #endif
  
@@ -28,10 +41,6 @@ index 39c2a4e23..8e196f789 100644
 +  return pthread_equal(thread, pthread_self()) ? pthread_setname_np(name) : 0;
 +}
 +#define pthread_setname_np ips3_setname
-+// No robust mutexes: the owner-died recovery never triggers.
-+#define PTHREAD_MUTEX_ROBUST 1
-+static inline int pthread_mutexattr_setrobust(pthread_mutexattr_t*, int) { return 0; }
-+static inline int pthread_mutex_consistent(pthread_mutex_t*) { return 0; }
 +// No CPU affinity: report all processors, ignore requests.
 +typedef struct { uint64_t bits; } cpu_set_t;
 +#define CPU_SETSIZE 64
@@ -54,16 +63,34 @@ index 39c2a4e23..8e196f789 100644
 +#define sem_destroy(sem) (dispatch_release(*(sem)), 0)
 +#endif
 +
++#if XE_PLATFORM_MAC || XE_PLATFORM_ANDROID
++// Ips3: no robust mutexes on Darwin or Bionic; the owner-died recovery never triggers.
++#define PTHREAD_MUTEX_ROBUST 1
++static inline int ips3_mutexattr_setrobust(pthread_mutexattr_t*, int) { return 0; }
++static inline int ips3_mutex_consistent(pthread_mutex_t*) { return 0; }
++#define pthread_mutexattr_setrobust ips3_mutexattr_setrobust
++#define pthread_mutex_consistent ips3_mutex_consistent
++#endif
++
  namespace xe {
  namespace threading {
  
-@@ -803,7 +851,9 @@ class PosixCondition<Thread> final : public PosixConditionBase {
+@@ -787,7 +840,7 @@ class PosixCondition<Thread> final : public PosixConditionBase {
+     if (state_ != State::kUninitialized && state_ != State::kFinished) {
+       pthread_setname_np(thread_, std::string(name).c_str());
+ #if XE_PLATFORM_ANDROID
+-      SetAndroidPreApi26Name(name);
++      const_cast<PosixCondition*>(this)->SetAndroidPreApi26Name(name);
+ #endif
+     }
+   }
+@@ -803,7 +856,9 @@ class PosixCondition<Thread> final : public PosixConditionBase {
    }
  #endif
  
 -  uint32_t system_id() const { return static_cast<uint32_t>(thread_); }
 +  uint32_t system_id() const {
-+    return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(thread_));
++    return static_cast<uint32_t>((uintptr_t)thread_); // pthread_t: a pointer or an integer
 +  }
  
    uint64_t affinity_mask() const {

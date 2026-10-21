@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include "atomic_ref_compat.h"
 #include <cassert>
 #include <charconv>
 #include <chrono>

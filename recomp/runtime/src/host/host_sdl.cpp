@@ -15,9 +15,7 @@
 
 #include <SDL.h>
 
-#ifdef __APPLE__
-#include <TargetConditionals.h>
-#endif
+#include "mobile.h"
 
 #include <atomic>
 #include <cstdio>
@@ -253,7 +251,7 @@ void host::Init()
 
 bool host::WindowMode()
 {
-#if defined(__APPLE__) && TARGET_OS_IPHONE
+#if IPS3_MOBILE
 	return true;
 #else
 	return getenv("IPS3_WINDOW") != nullptr;

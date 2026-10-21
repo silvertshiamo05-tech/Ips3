@@ -125,7 +125,22 @@ code (`ci/make_stub_ppc.sh`), to check that everything compiles and links for iO
 build needs the generated code, so it can only be made from the owner's copy of the game in a
 private repository or on a Mac.
 
-Next: the menu music, then testing on the device.
+### Android
+
+`android/build_apk.sh` builds `Bayonetta.apk` (arm64, Android 11 or later, Vulkan required) with
+the NDK and the SDK's command-line tools: the runtime as `libmain.so` under SDL's activity
+(`android/src/.../BayonettaActivity.java`).
+
+- First launch asks for the disc image with Android's file picker; it is read in place through
+  the open file, and remembered. Pick a file stored on the device or its SD card.
+- Saves and `bayonetta-log.txt` go to `Android/data/com.ips3.bayonetta/files` (the log is also
+  in logcat under the tag `Bayonetta`).
+- A controller works as on desktops; without one the touch controls show.
+
+The APK built against the real game code contains code generated from the game: it is for the
+owner's own devices only. `recomp-android-check.yml` builds it with the empty stand-in instead.
+
+Next: the menu music, then testing on the devices.
 
 ## Tools
 

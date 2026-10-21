@@ -12,12 +12,7 @@
 
 #include <SDL.h>
 
-#ifdef __APPLE__
-#include <TargetConditionals.h>
-#endif
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-#include "ios.h"
-#endif
+#include "mobile.h"
 
 #include <atomic>
 #include <cmath>
@@ -265,7 +260,7 @@ namespace
 
 	bool ShowTouchControls()
 	{
-#if defined(__APPLE__) && TARGET_OS_IPHONE
+#if IPS3_MOBILE
 		return !host::ControllerConnected();
 #else
 		static const bool forced = getenv("IPS3_TOUCH") != nullptr; // show them from the start
@@ -386,7 +381,7 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 	}
 
 	Uint32 flags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE;
-#if defined(__APPLE__) && TARGET_OS_IPHONE
+#if IPS3_MOBILE
 	flags |= SDL_WINDOW_FULLSCREEN | SDL_WINDOW_BORDERLESS;
 #endif
 	g_window = SDL_CreateWindow("Bayonetta", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, flags);
@@ -405,9 +400,9 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 	bool started = false;
 	bool picking = false;
 
-#if defined(__APPLE__) && TARGET_OS_IPHONE
+#if IPS3_MOBILE
 	if (pending.empty())
-		pending = ios::FindGameImage();
+		pending = mobile::FindGameImage();
 #endif
 
 	for (bool running = true; running;)
@@ -442,19 +437,18 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 				std::thread(FrameThread).detach();
 			}
 		}
-#if defined(__APPLE__) && TARGET_OS_IPHONE
+#if IPS3_MOBILE
 		else if (!started && !picking)
 		{
 			picking = true;
-			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Bayonetta",
-				"Choose your Bayonetta (Xbox 360) disc image (.iso). It is read in place, not copied.\n\n"
-				"You can also put the .iso in this app's Documents folder.", g_window);
-			ios::PickGameImage(g_window, [&](const std::filesystem::path& picked)
+			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Bayonetta", mobile::PickPrompt(), g_window);
+			mobile::PickGameImage(g_window, [&](const std::filesystem::path& picked)
 			{
 				pending = picked;
 				picking = false;
 			});
 		}
+		mobile::PollPicker();
 #endif
 
 		uint16_t buttons;
