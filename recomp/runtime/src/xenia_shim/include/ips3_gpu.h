@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdlib>
 #include <unistd.h>
 #include <vector>
 
@@ -10,7 +11,9 @@
 // is physical 0x1000). That can only be reproduced with 4 KiB host pages; on 16 KiB-page hosts
 // (Apple silicon, iOS) the view is mapped unshifted and every conversion uses this instead.
 inline uint32_t ips3_e_view_shift() {
-  static const uint32_t shift = sysconf(_SC_PAGESIZE) <= 0x1000 ? 0x1000 : 0;
+  // IPS3_E_SHIFT=0 forces the unshifted layout of large-page hosts, to test it on 4 KB ones.
+  static const uint32_t shift = getenv("IPS3_E_SHIFT") ? uint32_t(strtoul(getenv("IPS3_E_SHIFT"), nullptr, 0))
+                                : sysconf(_SC_PAGESIZE) <= 0x1000 ? 0x1000 : 0;
   return shift;
 }
 
