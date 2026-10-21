@@ -209,10 +209,17 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
                 uint64_t arms, triggers;
                 ips3_gpu_ring_state(&written, &read);
                 ips3_watch_stats(&arms, &triggers);
-                fmt::println(stderr, "[status] {}s: kernel calls {} (last {}), frames {}, GPU ring at {}, watches {}/{}",
+                uint32_t cpRead, cpOpcode;
+                uint64_t cpPackets, vblanks, cpInterrupts;
+                bool cpExecuting;
+                ips3_gpu_cp_state(&cpRead, &cpPackets, &cpOpcode, &cpExecuting);
+                ips3_interrupt_counts(&vblanks, &cpInterrupts);
+                fmt::println(stderr, "[status] {}s: kernel calls {} (last {}), frames {}, GPU ring written {} read {} "
+                    "({} packets, last opcode 0x{:02X}{}), interrupts vblank {} cp {}, watches {}/{}",
                     std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - begin).count(),
                     ips3::g_kernelCalls.load(), ips3::g_lastKernelCall.load(), ips3_gpu_swap_count(),
-                    written, triggers, arms);
+                    written, cpRead, cpPackets, cpOpcode, cpExecuting ? ", executing" : "", vblanks, cpInterrupts,
+                    triggers, arms);
             }
         }).detach();
     }

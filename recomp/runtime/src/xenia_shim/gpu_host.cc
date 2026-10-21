@@ -196,6 +196,15 @@ void ips3_gpu_write_swap(uint32_t* buffer, const uint32_t* fetch, uint32_t width
 
 uint64_t ips3_gpu_swap_count() { return g_gpu.swaps; }
 
+void ips3_gpu_cp_state(uint32_t* read_pointer, uint64_t* packets, uint32_t* last_opcode,
+                       bool* executing) {
+  auto* cp = g_gpu.graphics ? g_gpu.graphics->command_processor() : nullptr;
+  *read_pointer = cp ? cp->ips3_read_ptr_.load() : 0;
+  *packets = cp ? cp->ips3_packets_.load() : 0;
+  *last_opcode = cp ? cp->ips3_last_opcode_.load() : 0;
+  *executing = cp && cp->ips3_executing_.load();
+}
+
 void ips3_gpu_ring_state(uint32_t* write_pointer, uint32_t* read_pointer) {
   *write_pointer = LoadRegister(kRegWptr);
   *read_pointer = g_gpu.graphics ? g_gpu.graphics->register_file()->values[0x01C4] : 0;  // CP_RB_RPTR

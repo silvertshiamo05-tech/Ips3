@@ -32,6 +32,11 @@ void ips3_gpu_write_swap(uint32_t* buffer, const uint32_t* fetch, uint32_t width
 uint64_t ips3_gpu_swap_count();
 // The command ring: where the game has written to, and where the GPU has read to.
 void ips3_gpu_ring_state(uint32_t* write_pointer, uint32_t* read_pointer);
+// Xenia's command processor: where it has read the ring to, PM4 packets executed, the last
+// one's opcode, and whether it is executing commands right now.
+void ips3_gpu_cp_state(uint32_t* read_pointer, uint64_t* packets, uint32_t* last_opcode, bool* executing);
+// Graphics interrupts delivered to the game: vblank (source 0) and command processor (1).
+void ips3_interrupt_counts(uint64_t* vblank, uint64_t* command_processor);
 // Write watches armed on guest memory the GPU holds copies of, and how many fired.
 void ips3_watch_stats(uint64_t* arms, uint64_t* triggers);
 

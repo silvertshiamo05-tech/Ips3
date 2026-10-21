@@ -1,0 +1,45 @@
+diff --git a/src/xenia/gpu/command_processor.cc b/src/xenia/gpu/command_processor.cc
+index 16b00f6e8..7c2f5bd1f 100644
+--- a/src/xenia/gpu/command_processor.cc
++++ b/src/xenia/gpu/command_processor.cc
+@@ -407,7 +407,10 @@ void CommandProcessor::WorkerThreadMain() {
+     assert_true(read_ptr_index_ != write_ptr_index);
+ 
+     // Execute. Note that we handle wraparound transparently.
++    ips3_executing_ = true;
+     read_ptr_index_ = ExecutePrimaryBuffer(read_ptr_index_, write_ptr_index);
++    ips3_executing_ = false;
++    ips3_read_ptr_ = read_ptr_index_;
+ 
+     // TODO(benvanik): use reader->Read_update_freq_ and only issue after moving
+     //     that many indices.
+diff --git a/src/xenia/gpu/command_processor.h b/src/xenia/gpu/command_processor.h
+index 4d90dc899..00129f8cf 100644
+--- a/src/xenia/gpu/command_processor.h
++++ b/src/xenia/gpu/command_processor.h
+@@ -116,6 +116,12 @@ class CommandProcessor {
+                 // the start of the class so we can access it via rel8. This
+                 // also reduces the number of params we need to pass
+  public:
++  // Ips3: progress counters for the runtime's status line.
++  std::atomic<uint32_t> ips3_read_ptr_{0};
++  std::atomic<uint32_t> ips3_last_opcode_{0};
++  std::atomic<uint64_t> ips3_packets_{0};
++  std::atomic<bool> ips3_executing_{false};
++
+   enum class SwapPostEffect {
+     kNone,
+     kFxaa,
+diff --git a/src/xenia/gpu/pm4_command_processor_implement.h b/src/xenia/gpu/pm4_command_processor_implement.h
+index 1d9b7d985..82fb7d218 100644
+--- a/src/xenia/gpu/pm4_command_processor_implement.h
++++ b/src/xenia/gpu/pm4_command_processor_implement.h
+@@ -394,6 +394,8 @@ bool COMMAND_PROCESSOR::ExecutePacketType3(uint32_t packet) XE_RESTRICT {
+   uint32_t opcode = (packet >> 8) & 0x7F;
+   uint32_t count = ((packet >> 16) & 0x3FFF) + 1;
+   auto data_start_offset = reader_.read_offset();
++  ips3_last_opcode_.store(opcode, std::memory_order_relaxed);
++  ips3_packets_.fetch_add(1, std::memory_order_relaxed);
+ 
+   if (COMMAND_PROCESSOR::GetCurrentRingReadCount() >=
+       count * sizeof(uint32_t)) {
