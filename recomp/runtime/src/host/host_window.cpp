@@ -875,6 +875,37 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 				DrawFps();
 		}
 
+		// IPS3_WINDOW_SHOTS=<folder>[:seconds]: saves what the window shows every few seconds
+		// (default 5) as shot_<seconds since start>.bmp (testing).
+		static const char* shots = getenv("IPS3_WINDOW_SHOTS");
+		if (shots)
+		{
+			static std::string folder;
+			static int every = 5;
+			static auto nextShot = std::chrono::steady_clock::now();
+			static const auto begin = std::chrono::steady_clock::now();
+			if (folder.empty())
+			{
+				folder = shots;
+				if (const size_t colon = folder.rfind(':'); colon != std::string::npos)
+				{
+					every = std::max(1, atoi(folder.c_str() + colon + 1));
+					folder.resize(colon);
+				}
+			}
+			if (std::chrono::steady_clock::now() >= nextShot)
+			{
+				nextShot += std::chrono::seconds(every);
+				int w, h;
+				SDL_GetRendererOutputSize(g_renderer, &w, &h);
+				SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+				SDL_RenderReadPixels(g_renderer, nullptr, SDL_PIXELFORMAT_ARGB8888, surface->pixels, surface->pitch);
+				const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - begin).count();
+				SDL_SaveBMP(surface, fmt::format("{}/shot_{:05}.bmp", folder, seconds).c_str());
+				SDL_FreeSurface(surface);
+			}
+		}
+
 		// IPS3_WINDOW_SHOT=<file.bmp>[:seconds]: saves what the window shows once (testing).
 		static const char* shot = getenv("IPS3_WINDOW_SHOT");
 		static const auto opened = std::chrono::steady_clock::now();

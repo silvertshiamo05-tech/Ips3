@@ -48,6 +48,7 @@ target_sources(bayonetta PRIVATE
     src/host/thread_usage.cpp
     src/cpu/guest_thread.cpp
     src/gpu/interrupts.cpp
+    src/gpu/query_wait.cpp
     src/kernel/heap.cpp
     src/kernel/imports.cpp
     src/kernel/imports_bayonetta.cpp

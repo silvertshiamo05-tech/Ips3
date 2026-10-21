@@ -7,6 +7,9 @@
 //   IPS3_AUDIO_WAV=<file>   also write everything played to a 48 kHz stereo float WAV file.
 //   IPS3_INPUT=<script>     scripted pad input for headless runs: "ms:BUTTON:hold_ms;..." with
 //                           times from start-up, e.g. "30000:START:150;32000:A:150".
+//   IPS3_INPUT_FILE=<file>  live input for headless runs: each line appended to the file presses
+//                           a button now, "B 300" (button, hold ms), or tilts the left stick,
+//                           "LX -1 2000" / "LY 1 2000" (axis, -1..1, hold ms).
 #include <stdafx.h>
 #include "host.h"
 #include "host_internal.h"
@@ -15,6 +18,10 @@
 #include <hid/hid.h>
 
 #include <SDL.h>
+
+#include <fstream>
+#include <mutex>
+#include <sstream>
 
 #include "mobile.h"
 
@@ -53,6 +60,8 @@ namespace
 		uint32_t at, hold;
 		uint16_t button;
 		bool logged = false;
+		int axis = -1; // 0 left stick X, 1 left stick Y (instead of a button)
+		float value = 0;
 	};
 
 	uint16_t ButtonByName(const std::string& name)
@@ -134,7 +143,52 @@ namespace
 
 	std::vector<SDL_GameController*> g_pads;
 	std::vector<ScriptedPress> g_script;
+	std::mutex g_scriptMutex;
 	const auto g_start = std::chrono::steady_clock::now();
+
+	uint32_t NowMs()
+	{
+		return uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - g_start).count());
+	}
+
+	// Follows IPS3_INPUT_FILE, turning each new line into a press that starts now.
+	void InputFileThread(std::string path)
+	{
+		std::ifstream file;
+		std::streamoff offset = 0;
+		for (;; std::this_thread::sleep_for(std::chrono::milliseconds(50)))
+		{
+			file.open(path);
+			if (!file)
+				continue;
+			file.seekg(offset);
+			std::string line;
+			while (std::getline(file, line))
+			{
+				if (file.eof())
+					break; // a partly written line: read it again next time
+				offset = file.tellg();
+				std::istringstream words(line);
+				std::string name;
+				words >> name;
+				ScriptedPress press{ NowMs(), 300, 0 };
+				if (name == "LX" || name == "LY")
+				{
+					press.axis = name == "LX" ? 0 : 1;
+					words >> press.value >> press.hold;
+				}
+				else
+				{
+					press.button = ButtonByName(name);
+					words >> press.hold;
+				}
+				std::lock_guard lock(g_scriptMutex);
+				g_script.push_back(press);
+			}
+			file.close();
+		}
+	}
 
 	// Polls controllers about every 4 ms (the console's input rate) when there is no window.
 	void InputThread()
@@ -201,13 +255,17 @@ void host::UpdatePad(uint16_t extraButtons, uint8_t extraTriggers, const TouchSt
 	merge(state.thumbRX, sticks.rightX);
 	merge(state.thumbRY, sticks.rightY);
 
-	const uint32_t now = uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
-		std::chrono::steady_clock::now() - g_start).count());
+	const uint32_t now = NowMs();
+	std::lock_guard lock(g_scriptMutex);
 	for (auto& press : g_script)
 	{
 		if (now >= press.at && now < press.at + press.hold)
 		{
 			state.buttons |= press.button;
+			if (press.axis == 0)
+				state.thumbLX = int16_t(std::clamp(press.value, -1.0f, 1.0f) * 32767.0f);
+			else if (press.axis == 1)
+				state.thumbLY = int16_t(std::clamp(press.value, -1.0f, 1.0f) * 32767.0f);
 			if (!press.logged)
 			{
 				press.logged = true;
@@ -243,6 +301,8 @@ void host::Init()
 
 	if (const char* text = getenv("IPS3_INPUT"))
 		g_script = ParseScript(text);
+	if (const char* path = getenv("IPS3_INPUT_FILE"))
+		std::thread(InputFileThread, std::string(path)).detach();
 
 	// Player 0 reads as connected from the first frame on.
 	hid::SetHostState(0, hid::HostPadState{ .connected = true });

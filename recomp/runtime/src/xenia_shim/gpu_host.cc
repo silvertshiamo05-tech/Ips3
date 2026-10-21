@@ -17,6 +17,8 @@
 #include <fstream>
 #include <thread>
 
+#include <algorithm>
+
 #include "xenia/ui/gpu_completion_timeline.h"
 #include "xenia/base/byte_order.h"
 #include "xenia/base/cvar.h"
@@ -115,6 +117,27 @@ bool ips3_gpu_start(uint8_t* guest_membase) {
   // a plausible sample count at once (Xenia's own fallback). IPS3_OCCLUSION_QUERY overrides.
   const char* occlusion = getenv("IPS3_OCCLUSION_QUERY");
   cvars::occlusion_query = occlusion ? occlusion : "fake";
+
+  // IPS3_XENIA="name = value; name = value": Xenia settings (TOML values, e.g. strings quoted),
+  // for experiments.
+  if (const char* text = getenv("IPS3_XENIA")) {
+    std::string toml_text = text;
+    std::replace(toml_text.begin(), toml_text.end(), ';', '\n');
+    try {
+      const toml::table table = toml::parse(toml_text);
+      for (const auto& [key, node] : table) {
+        auto it = cvar::ConfigVars->find(std::string(key.str()));
+        if (it == cvar::ConfigVars->end()) {
+          XELOGW("Ips3: IPS3_XENIA: no setting {}", key.str());
+          continue;
+        }
+        it->second->LoadConfigValue(&node);
+        XELOGI("Ips3: {} = {}", key.str(), it->second->config_value());
+      }
+    } catch (const toml::parse_error& e) {
+      XELOGW("Ips3: IPS3_XENIA: {}", e.what());
+    }
+  }
 
   g_gpu.memory = ips3_create_gpu_memory();
   ips3_install_write_watch_handler();
