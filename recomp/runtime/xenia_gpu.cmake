@@ -22,9 +22,8 @@ else()
 endif()
 
 set(XENIA_BASE_SOURCES
-    assert bit_map byte_stream clock clock_posix console_posix cvar debugging_posix exception_handler
-    exception_handler_posix filesystem filesystem_posix filesystem_wildcard logging
-    mapped_memory_posix memory memory_posix mutex profiling ring_buffer string string_buffer
+    assert bit_map byte_stream clock clock_posix console_posix cvar debugging_posix filesystem
+    filesystem_posix filesystem_wildcard logging mapped_memory_posix memory memory_posix mutex profiling ring_buffer string string_buffer
     threading threading_posix threading_timer_queue utf8 vec128)
 list(TRANSFORM XENIA_BASE_SOURCES PREPEND "${XENIA_SRC}/base/")
 list(TRANSFORM XENIA_BASE_SOURCES APPEND ".cc")

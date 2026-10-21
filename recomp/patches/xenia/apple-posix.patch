@@ -1,0 +1,136 @@
+diff --git a/src/xenia/base/threading_posix.cc b/src/xenia/base/threading_posix.cc
+index 39c2a4e23..8e196f789 100644
+--- a/src/xenia/base/threading_posix.cc
++++ b/src/xenia/base/threading_posix.cc
+@@ -51,6 +51,54 @@
+ #define XE_HAS_SIGEV_THREAD_ID 0
+ #endif
+ 
++#if XE_PLATFORM_MAC
++// Ips3: the Linux pieces this file uses, on Darwin (macOS, iOS).
++#include <dispatch/dispatch.h>
++#include <mach/mach.h>
++#include <mach/mach_time.h>
++// Two signals for suspend and user callbacks: SIGUSR1 and SIGUSR2 are adjacent.
++#define SIGRTMIN SIGUSR1
++#define SIGRTMAX (SIGUSR2 + 1)
++// The kernel thread id.
++#undef SYS_gettid
++#define SYS_gettid -1
++static inline long ips3_syscall(long number) {
++  uint64_t id = 0;
++  pthread_threadid_np(nullptr, &id);
++  return long(id);
++}
++#define syscall(number, ...) ips3_syscall(number)
++// Darwin names only the calling thread.
++static inline int ips3_setname(pthread_t thread, const char* name) {
++  return pthread_equal(thread, pthread_self()) ? pthread_setname_np(name) : 0;
++}
++#define pthread_setname_np ips3_setname
++// No robust mutexes: the owner-died recovery never triggers.
++#define PTHREAD_MUTEX_ROBUST 1
++static inline int pthread_mutexattr_setrobust(pthread_mutexattr_t*, int) { return 0; }
++static inline int pthread_mutex_consistent(pthread_mutex_t*) { return 0; }
++// No CPU affinity: report all processors, ignore requests.
++typedef struct { uint64_t bits; } cpu_set_t;
++#define CPU_SETSIZE 64
++#define CPU_ZERO(set) ((set)->bits = 0)
++#define CPU_SET(i, set) ((set)->bits |= uint64_t(1) << (i))
++#define CPU_ISSET(i, set) (((set)->bits >> (i)) & 1)
++static inline int pthread_getaffinity_np(pthread_t, size_t, cpu_set_t* set) {
++  set->bits = ~uint64_t(0);
++  return 0;
++}
++static inline int pthread_setaffinity_np(pthread_t, size_t, const cpu_set_t*) { return 0; }
++// No signal payloads: user callbacks by signal are unsupported (the GPU does not use them).
++static inline int pthread_sigqueue(pthread_t, int, const union sigval) { return -1; }
++// Unnamed POSIX semaphores are not implemented on Darwin; use dispatch semaphores.
++typedef dispatch_semaphore_t ips3_sem_t;
++#define sem_t ips3_sem_t
++#define sem_init(sem, shared, value) ((*(sem) = dispatch_semaphore_create(value)) ? 0 : -1)
++#define sem_wait(sem) (dispatch_semaphore_wait(*(sem), DISPATCH_TIME_FOREVER), 0)
++#define sem_post(sem) (dispatch_semaphore_signal(*(sem)), 0)
++#define sem_destroy(sem) (dispatch_release(*(sem)), 0)
++#endif
++
+ namespace xe {
+ namespace threading {
+ 
+@@ -803,7 +851,9 @@ class PosixCondition<Thread> final : public PosixConditionBase {
+   }
+ #endif
+ 
+-  uint32_t system_id() const { return static_cast<uint32_t>(thread_); }
++  uint32_t system_id() const {
++    return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(thread_));
++  }
+ 
+   uint64_t affinity_mask() const {
+     WaitStarted();
+diff --git a/src/xenia/ui/vulkan/spirv_tools_context.cc b/src/xenia/ui/vulkan/spirv_tools_context.cc
+index 8b3d9e1e8..00bca4d36 100644
+--- a/src/xenia/ui/vulkan/spirv_tools_context.cc
++++ b/src/xenia/ui/vulkan/spirv_tools_context.cc
+@@ -14,7 +14,7 @@
+ #include "xenia/base/logging.h"
+ #include "xenia/base/platform.h"
+ 
+-#if XE_PLATFORM_LINUX
++#if XE_PLATFORM_LINUX || XE_PLATFORM_MAC
+ #include <dlfcn.h>
+ #elif XE_PLATFORM_WIN32
+ #include "xenia/base/platform_win.h"
+@@ -32,7 +32,11 @@ bool SpirvToolsContext::Initialize(unsigned int spirv_version) {
+     return false;
+   }
+   std::filesystem::path vulkan_sdk_path(vulkan_sdk_env);
+-#if XE_PLATFORM_LINUX
++#if XE_PLATFORM_MAC
++  // Ips3: no SPIR-V validation on Apple platforms (it is optional and off by default).
++  XELOGE("SPIRV-Tools: not available on this platform");
++  return false;
++#elif XE_PLATFORM_LINUX
+   library_ = dlopen((vulkan_sdk_path / "bin/libSPIRV-Tools-shared.so").c_str(),
+                     RTLD_NOW | RTLD_LOCAL);
+   if (!library_) {
+@@ -86,7 +90,7 @@ void SpirvToolsContext::Shutdown() {
+     context_ = nullptr;
+   }
+   if (library_) {
+-#if XE_PLATFORM_LINUX
++#if XE_PLATFORM_LINUX || XE_PLATFORM_MAC
+     dlclose(library_);
+ #elif XE_PLATFORM_WIN32
+     FreeLibrary(library_);
+diff --git a/src/xenia/ui/vulkan/spirv_tools_context.h b/src/xenia/ui/vulkan/spirv_tools_context.h
+index 2ffea1ebd..cc7846e2b 100644
+--- a/src/xenia/ui/vulkan/spirv_tools_context.h
++++ b/src/xenia/ui/vulkan/spirv_tools_context.h
+@@ -16,7 +16,7 @@
+ #include "third_party/SPIRV-Tools/include/spirv-tools/libspirv.h"
+ #include "xenia/base/platform.h"
+ 
+-#if XE_PLATFORM_LINUX
++#if XE_PLATFORM_LINUX || XE_PLATFORM_MAC
+ #include <dlfcn.h>
+ #elif XE_PLATFORM_WIN32
+ #include "xenia/base/platform_win.h"
+@@ -39,7 +39,7 @@ class SpirvToolsContext {
+                         std::string* error) const;
+ 
+  private:
+-#if XE_PLATFORM_LINUX
++#if XE_PLATFORM_LINUX || XE_PLATFORM_MAC
+   void* library_ = nullptr;
+ #elif XE_PLATFORM_WIN32
+   HMODULE library_ = nullptr;
+@@ -47,7 +47,7 @@ class SpirvToolsContext {
+ 
+   template <typename FunctionPointer>
+   bool LoadLibraryFunction(FunctionPointer& function, const char* name) {
+-#if XE_PLATFORM_LINUX
++#if XE_PLATFORM_LINUX || XE_PLATFORM_MAC
+     function = reinterpret_cast<FunctionPointer>(dlsym(library_, name));
+ #elif XE_PLATFORM_WIN32
+     function =
