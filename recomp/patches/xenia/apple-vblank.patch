@@ -1,0 +1,22 @@
+diff --git a/src/xenia/gpu/graphics_system.cc b/src/xenia/gpu/graphics_system.cc
+index dbc1ab2cd..bf967bae2 100644
+--- a/src/xenia/gpu/graphics_system.cc
++++ b/src/xenia/gpu/graphics_system.cc
+@@ -179,7 +179,7 @@ X_STATUS GraphicsSystem::Setup(cpu::Processor* processor,
+ #if XE_PLATFORM_WIN32
+             constexpr double duration_scalar = 0.90;
+ #endif
+-#if XE_PLATFORM_LINUX
++#if XE_PLATFORM_LINUX || XE_PLATFORM_MAC  // Ips3: and Apple platforms (no vblanks otherwise)
+             constexpr double duration_scalar = 1.0;
+ #endif
+ 
+@@ -229,7 +229,7 @@ X_STATUS GraphicsSystem::Setup(cpu::Processor* processor,
+                 }
+               }
+ #endif
+-#if XE_PLATFORM_LINUX
++#if XE_PLATFORM_LINUX || XE_PLATFORM_MAC  // Ips3: and Apple platforms (no vblanks otherwise)
+               MarkVblank();
+ 
+               if (cvars::vsync || normalized_framerate_limit > 0) {
