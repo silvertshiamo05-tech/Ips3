@@ -21,6 +21,7 @@ namespace
 	std::atomic<uint32_t> g_callbackArg{ 0 };
 	std::atomic<bool> g_running{ false };
 	std::atomic<uint64_t> g_framesSubmitted{ 0 };
+	std::atomic<uint64_t> g_framesAudible{ 0 };
 
 	void DriverThread()
 	{
@@ -46,7 +47,7 @@ namespace
 			if (getenv("IPS3_TRACE_AUDIO") && std::chrono::steady_clock::now() - lastReport > std::chrono::seconds(5))
 			{
 				lastReport = std::chrono::steady_clock::now();
-				fmt::println(stderr, "[audio] {} callbacks, {} frames submitted", calls, g_framesSubmitted.load());
+				fmt::println(stderr, "[audio] {} callbacks, {} frames submitted, {} audible", calls, g_framesSubmitted.load(), g_framesAudible.load());
 			}
 
 			// Fell far behind (e.g. a debugger pause): don't replay the missed frames.
@@ -66,6 +67,9 @@ static uint32_t XAudioRegisterRenderDriverClient(be<uint32_t>* callback, be<uint
 	g_callback = callback[0];
 	*driver = DRIVER_HANDLE;
 
+	if (getenv("IPS3_TRACE_AUDIO"))
+		fmt::println(stderr, "[audio] render client {:08X} argument {:08X}", uint32_t(callback[0]), uint32_t(callback[1]));
+
 	if (!g_running.exchange(true))
 		std::thread(DriverThread).detach();
 
@@ -78,9 +82,22 @@ static uint32_t XAudioUnregisterRenderDriverClient(uint32_t driver)
 	return 0;
 }
 
-static uint32_t XAudioSubmitRenderDriverFrame(uint32_t driver, void* samples)
+static uint32_t XAudioSubmitRenderDriverFrame(uint32_t driver, be<float>* samples)
 {
 	g_framesSubmitted++;
+
+	if (samples != nullptr)
+	{
+		for (size_t i = 0; i < 6 * 256; i++)
+		{
+			if (std::abs(float(samples[i])) > 1e-4f)
+			{
+				g_framesAudible++;
+				break;
+			}
+		}
+	}
+
 	return 0;
 }
 

@@ -141,6 +141,18 @@ uint32_t XamNotifyCreateListener(uint64_t qwAreas)
 
     listener->areas = qwAreas;
 
+    // Ips3: as on the console (and in Xenia), the first listener for system notifications gets
+    // the start-up sequence; titles wait for the sign-in change before leaving their boot flow.
+    static bool notifiedStartup = false;
+    if (!notifiedStartup && (qwAreas & 1) != 0)
+    {
+        notifiedStartup = true;
+        listener->notifications.emplace_back(9, 1);  // XN_SYS_UI: shown
+        listener->notifications.emplace_back(9, 0);  // XN_SYS_UI: hidden
+        listener->notifications.emplace_back(10, 1); // XN_SYS_SIGNINCHANGED: user 0
+        listener->notifications.emplace_back(10, 1);
+    }
+
     return GetKernelHandle(listener);
 }
 
