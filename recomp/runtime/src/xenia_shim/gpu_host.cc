@@ -14,6 +14,7 @@
 #include <thread>
 
 #include "xenia/base/byte_order.h"
+#include "xenia/base/cvar.h"
 #include "xenia/base/logging.h"
 #include "xenia/base/memory.h"
 #include "xenia/cpu/processor.h"
@@ -24,6 +25,8 @@
 #include "xenia/gpu/xenos.h"
 #include "xenia/kernel/kernel_state.h"
 #include "xenia/ui/presenter.h"
+
+DECLARE_string(occlusion_query);
 
 extern uint8_t* ips3_guest_membase;
 xe::Memory* ips3_create_gpu_memory();
@@ -92,6 +95,12 @@ void RegisterThread() {
 bool ips3_gpu_start(uint8_t* guest_membase) {
   ips3_guest_membase = guest_membase;
   xe::InitializeLogging("ips3");
+
+  // Occlusion query results: Xenia's real host queries only write their reports back as
+  // submissions complete, which leaves Direct3D's GetData polling forever here; "fake" writes
+  // a plausible sample count at once (Xenia's own fallback). IPS3_OCCLUSION_QUERY overrides.
+  const char* occlusion = getenv("IPS3_OCCLUSION_QUERY");
+  cvars::occlusion_query = occlusion ? occlusion : "fake";
 
   g_gpu.memory = ips3_create_gpu_memory();
   ips3_install_write_watch_handler();
