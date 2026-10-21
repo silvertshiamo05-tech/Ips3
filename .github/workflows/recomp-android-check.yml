@@ -4,9 +4,8 @@
 # owner's own copy of the game and is never built in this public repository.
 name: recomp Android check
 
+# Paused while the work focuses on iOS: run it by hand from the Actions tab.
 on:
-  push:
-    paths: ["recomp/**", ".github/workflows/recomp-android-check.yml"]
   workflow_dispatch:
 
 jobs:
