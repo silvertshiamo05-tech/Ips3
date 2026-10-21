@@ -90,6 +90,11 @@ Added on top of UnleashedRecomp:
   - `kernel.cc`: GPU host threads; interrupts run the game's handler on its own guest stack
     (`gpu/interrupts.cpp`).
   - Xenia's built-in shaders are compiled by `tools/build_xenia_shaders.py`.
+  - `patches/xenia/rectangle-lists.patch`: Xenos rectangle lists (full-screen passes) on GPUs
+    without geometry shaders, such as Apple's through MoltenVK. Xenia's Vulkan backend only had
+    the geometry shader path; here every host vertex runs the guest vertex shader for the
+    rectangle's 3 vertices and outputs its corner. `IPS3_NO_GEOMETRY_SHADER=1` tests it on other
+    GPUs, `IPS3_DUMP_SHADERS=<folder>` saves the translated SPIR-V.
 
   On Linux it renders with Mesa's llvmpipe (software Vulkan); on iOS the same backend is
   meant to run on MoltenVK.
