@@ -12,7 +12,9 @@ std::string_view XamGetRootPath(const std::string_view& root);
 void XamRootCreate(const std::string_view& root, const std::string_view& path);
 
 uint32_t XamNotifyCreateListener(uint64_t qwAreas);
-void XamNotifyEnqueueEvent(uint32_t dwId, uint32_t dwParam); // i made it the fuck up
+void XamNotifyEnqueueEvent(uint32_t dwId, uint32_t dwParam, uint32_t delayMs = 0);
+// Ips3: a system dialog opening, then (if dwId) that notification and the dialog closing shortly after.
+void XamShowSystemUI(uint32_t dwId, uint32_t dwParam);
 // Ips3: finishes an asynchronous XAM request at once. Without an XOVERLAPPED it returns `result`;
 // with one it stores the result, signals the event and returns ERROR_IO_PENDING, as XAM does.
 // Ips3: the one local profile's XUID (offline XUIDs have the top nibble E). Every XAM call that

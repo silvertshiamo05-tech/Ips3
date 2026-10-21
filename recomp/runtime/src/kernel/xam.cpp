@@ -12,7 +12,8 @@ struct XamListener : KernelObject
 {
     uint32_t id{};
     uint64_t areas{};
-    std::vector<std::tuple<uint32_t, uint32_t>> notifications;
+    // Ips3: id, parameter and the time the notification becomes visible.
+    std::vector<std::tuple<uint32_t, uint32_t, std::chrono::steady_clock::time_point>> notifications;
 
     XamListener(const XamListener&) = delete;
     XamListener& operator=(const XamListener&) = delete;
@@ -147,24 +148,42 @@ uint32_t XamNotifyCreateListener(uint64_t qwAreas)
     if (!notifiedStartup && (qwAreas & 1) != 0)
     {
         notifiedStartup = true;
-        listener->notifications.emplace_back(9, 1);  // XN_SYS_UI: shown
-        listener->notifications.emplace_back(9, 0);  // XN_SYS_UI: hidden
-        listener->notifications.emplace_back(10, 1); // XN_SYS_SIGNINCHANGED: user 0
-        listener->notifications.emplace_back(10, 1);
+        const auto now = std::chrono::steady_clock::now();
+        listener->notifications.emplace_back(9, 1, now);  // XN_SYS_UI: shown
+        listener->notifications.emplace_back(9, 0, now);  // XN_SYS_UI: hidden
+        listener->notifications.emplace_back(10, 1, now); // XN_SYS_SIGNINCHANGED: user 0
+        listener->notifications.emplace_back(10, 1, now);
     }
 
     return GetKernelHandle(listener);
 }
 
-void XamNotifyEnqueueEvent(uint32_t dwId, uint32_t dwParam)
+namespace
 {
+    std::mutex g_notifyMutex;
+}
+
+void XamNotifyEnqueueEvent(uint32_t dwId, uint32_t dwParam, uint32_t delayMs)
+{
+    std::lock_guard lock(g_notifyMutex);
+    const auto due = std::chrono::steady_clock::now() + std::chrono::milliseconds(delayMs);
     for (const auto& listener : gListeners)
     {
         if (((1 << MSG_AREA(dwId)) & listener->areas) == 0)
             continue;
 
-        listener->notifications.emplace_back(dwId, dwParam);
+        listener->notifications.emplace_back(dwId, dwParam, due);
     }
+}
+
+void XamShowSystemUI(uint32_t dwId, uint32_t dwParam)
+{
+    // Shown now; the result and the closing arrive over the next frames, as when a player
+    // dismisses the dialog. Titles wait to see the UI open before they wait for it to close.
+    XamNotifyEnqueueEvent(9, 1);
+    if (dwId != 0)
+        XamNotifyEnqueueEvent(dwId, dwParam, 300);
+    XamNotifyEnqueueEvent(9, 0, 500);
 }
 
 struct Event;
@@ -187,38 +206,24 @@ uint32_t XamCompleteOverlapped(XXOVERLAPPED* overlapped, uint32_t result, uint32
 bool XNotifyGetNext(uint32_t hNotification, uint32_t dwMsgFilter, be<uint32_t>* pdwId, be<uint32_t>* pParam)
 {
     auto& listener = *GetKernelObject<XamListener>(hNotification);
+    std::lock_guard lock(g_notifyMutex);
+    const auto now = std::chrono::steady_clock::now();
 
-    if (dwMsgFilter)
+    // In order, and only those already due: a later notification never overtakes an earlier one.
+    for (size_t i = 0; i < listener.notifications.size(); i++)
     {
-        for (size_t i = 0; i < listener.notifications.size(); i++)
-        {
-            if (std::get<0>(listener.notifications[i]) == dwMsgFilter)
-            {
-                if (pdwId)
-                    *pdwId = std::get<0>(listener.notifications[i]);
-
-                if (pParam)
-                    *pParam = std::get<1>(listener.notifications[i]);
-
-                listener.notifications.erase(listener.notifications.begin() + i);
-
-                return true;
-            }
-        }
-    }
-    else
-    {
-        if (listener.notifications.empty())
-            return false;
+        const auto& [id, param, due] = listener.notifications[i];
+        if (due > now)
+            break;
+        if (dwMsgFilter != 0 && id != dwMsgFilter)
+            continue;
 
         if (pdwId)
-            *pdwId = std::get<0>(listener.notifications[0]);
-
+            *pdwId = id;
         if (pParam)
-            *pParam = std::get<1>(listener.notifications[0]);
+            *pParam = param;
 
-        listener.notifications.erase(listener.notifications.begin());
-
+        listener.notifications.erase(listener.notifications.begin() + i);
         return true;
     }
 
@@ -228,7 +233,9 @@ bool XNotifyGetNext(uint32_t hNotification, uint32_t dwMsgFilter, be<uint32_t>* 
 uint32_t XamShowMessageBoxUI(uint32_t dwUserIndex, be<uint16_t>* wszTitle, be<uint16_t>* wszText, uint32_t cButtons,
     xpointer<be<uint16_t>>* pwszButtons, uint32_t dwFocusButton, uint32_t dwFlags, be<uint32_t>* pResult, XXOVERLAPPED* pOverlapped)
 {
-    *pResult = cButtons ? cButtons - 1 : 0;
+    // Ips3: no dialog is drawn; answer with the first button, the affirmative choice in
+    // Bayonetta's boxes ("YES" to playing with an offline profile).
+    *pResult = 0;
 
 #if _DEBUG
     assert("XamShowMessageBoxUI encountered!" && false);
@@ -271,7 +278,7 @@ uint32_t XamShowMessageBoxUI(uint32_t dwUserIndex, be<uint16_t>* wszTitle, be<ui
     wprintf(L"[XamShowMessageBoxUI] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 #endif
 
-    XamNotifyEnqueueEvent(9, 0);
+    XamShowSystemUI(0, 0);
 
     return XamCompleteOverlapped(pOverlapped, 0);
 }

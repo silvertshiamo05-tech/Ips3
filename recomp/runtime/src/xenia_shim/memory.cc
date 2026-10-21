@@ -300,6 +300,19 @@ void FaultHandler(int signal, siginfo_t* info, void* context) {
                                                           false, true)) {
       return;  // retry the write
     }
+
+    // Another thread can take the same watch between this fault and the lock above: the page is
+    // writable again by now, so retry. A fault that keeps repeating at one address is real.
+    thread_local void* last_address = nullptr;
+    thread_local uint32_t repeats = 0;
+    uint32_t physical;
+    if (GuestToPhysical(guest, &physical)) {
+      repeats = address == last_address ? repeats + 1 : 0;
+      last_address = address;
+      if (repeats < 64) {
+        return;
+      }
+    }
   }
 
   // Not ours: hand it to whoever was installed before (or crash as usual).

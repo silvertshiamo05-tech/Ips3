@@ -275,9 +275,7 @@ uint32_t XamUserGetSigninInfo(uint32_t userIndex, uint32_t flags, XUSER_SIGNIN_I
 uint32_t XamShowSigninUI(uint32_t usersNeeded, uint32_t flags)
 {
     fmt::println(stderr, "[xam] XamShowSigninUI({}, {:X})", usersNeeded, flags);
-    XamNotifyEnqueueEvent(9, 1);  // XN_SYS_UI: shown
-    XamNotifyEnqueueEvent(10, 1); // XN_SYS_SIGNINCHANGED: user 0
-    XamNotifyEnqueueEvent(9, 0);  // XN_SYS_UI: hidden
+    XamShowSystemUI(10, 1); // XN_SYS_SIGNINCHANGED: user 0
     return 0;
 }
 
@@ -292,9 +290,8 @@ uint32_t XamShowDeviceSelectorUI
 )
 {
     fmt::println(stderr, "[xam] XamShowDeviceSelectorUI(user {}, type {:X})", userIndex, contentType);
-    XamNotifyEnqueueEvent(9, true);
     *deviceId = 1;
-    XamNotifyEnqueueEvent(9, false);
+    XamShowSystemUI(0, 0);
     return XamCompleteOverlapped(overlapped, 0);
 }
 
