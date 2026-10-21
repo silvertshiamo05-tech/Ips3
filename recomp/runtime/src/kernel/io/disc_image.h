@@ -28,6 +28,8 @@ namespace DiscImage
 
 	// Opens and indexes an image. Null if the file is not an XDVDFS image.
 	std::shared_ptr<Disc> Open(const std::filesystem::path& path);
+	// Why the last Open failed, in words for the player.
+	std::string LastError();
 
 	// Finds the disc mounted at `hostPath` or one of its parents (paths below an image name
 	// files inside it) and the entry for the rest of the path, matched without regard to case.

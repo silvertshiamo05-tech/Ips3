@@ -23,6 +23,26 @@ namespace
 	constexpr uint64_t PARTITION_OFFSETS[] = { 0x00000000, 0x0000FB20, 0x00020600, 0x02080000, 0x0FD90000, 0x18300000 };
 
 	std::mutex g_mutex;
+	std::string g_lastError;
+
+	// Names what a file that is not a disc image looks like, from its first bytes.
+	std::string Identify(const uint8_t* head)
+	{
+		auto is = [&](const char* magic) { return memcmp(head, magic, strlen(magic)) == 0; };
+		if (is("PK\x03\x04"))
+			return "It is a ZIP archive: extract the .iso from it first.";
+		if (is("7z\xBC\xAF\x27\x1C"))
+			return "It is a 7-Zip archive: extract the .iso from it first.";
+		if (is("Rar!"))
+			return "It is a RAR archive: extract the .iso from it first.";
+		if (is("CON ") || is("LIVE") || is("PIRS"))
+			return "It is an Xbox 360 package (Games on Demand / STFS), not a disc image.";
+		if (std::all_of(head, head + 2048, [](uint8_t b) { return b == 0; }))
+			return "Its start is all zeros where a disc image has data at the known offsets: "
+				"it may be incomplete (still downloading, or cut short).";
+		return fmt::format("It starts with {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}.",
+			head[0], head[1], head[2], head[3], head[4], head[5], head[6], head[7]);
+	}
 	std::vector<std::shared_ptr<DiscImage::Disc>> g_discs;
 
 	bool ReadAt(int fd, uint64_t offset, void* buffer, size_t size)
@@ -151,7 +171,8 @@ std::shared_ptr<DiscImage::Disc> DiscImage::Open(const std::filesystem::path& pa
 		fd = open(path.c_str(), O_RDONLY);
 	if (fd < 0)
 	{
-		fmt::println(stderr, "[disc] {}: cannot open ({})", text, strerror(errno));
+		g_lastError = fmt::format("The app may not open the file ({}).", strerror(errno));
+		fmt::println(stderr, "[disc] {}: {}", text, g_lastError);
 		return nullptr;
 	}
 
@@ -171,6 +192,7 @@ std::shared_ptr<DiscImage::Disc> DiscImage::Open(const std::filesystem::path& pa
 
 		if (!ReadDirectory(fd, partition, U32(descriptor + 20), U32(descriptor + 24), disc->root, 0))
 		{
+			g_lastError = "Its Xbox 360 file system is damaged (the directory tree does not read).";
 			fmt::println(stderr, "[disc] {}: corrupt directory tree", path.string());
 			break;
 		}
@@ -179,14 +201,23 @@ std::shared_ptr<DiscImage::Disc> DiscImage::Open(const std::filesystem::path& pa
 		return disc;
 	}
 
-	uint8_t probe[SECTOR_SIZE];
-	if (!ReadAt(fd, 0, probe, sizeof(probe)))
-		fmt::println(stderr, "[disc] {}: cannot read ({})", text, strerror(errno));
+	const uint64_t size = uint64_t(lseek(fd, 0, SEEK_END));
+	uint8_t probe[SECTOR_SIZE] = {};
+	errno = 0;
+	if (pread(fd, probe, sizeof(probe), 0) <= 0)
+		g_lastError = fmt::format("The file opened but could not be read ({}; {} bytes). If it is "
+			"in iCloud or another cloud folder, keep it on the device instead.", errno ? strerror(errno) : "end of file", size);
 	else
-		fmt::println(stderr, "[disc] {}: no XDVDFS volume at any known offset ({} bytes)", text,
-			uint64_t(lseek(fd, 0, SEEK_END)));
+		g_lastError = fmt::format("It is {} bytes, with no Xbox 360 file system at any known offset "
+			"(a full Bayonetta image is 7838695424 bytes). {}", size, Identify(probe));
+	fmt::println(stderr, "[disc] {}: {}", text, g_lastError);
 	close(fd);
 	return nullptr;
+}
+
+std::string DiscImage::LastError()
+{
+	return g_lastError;
 }
 
 std::shared_ptr<DiscImage::Disc> DiscImage::Lookup(const std::filesystem::path& hostPath, const Entry** entry)
