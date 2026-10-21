@@ -29,6 +29,9 @@ namespace mobile
 	// The disc image picked on an earlier launch, else the first .iso in DataPath(), else empty.
 	std::filesystem::path FindGameImage();
 
+	// Forgets the remembered disc image (it did not start), so the picker shows again.
+	void ForgetGameImage();
+
 	// What the app says before showing the picker.
 	const char* PickPrompt();
 

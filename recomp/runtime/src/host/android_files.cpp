@@ -104,6 +104,11 @@ std::filesystem::path mobile::FindGameImage()
 	return {};
 }
 
+void mobile::ForgetGameImage()
+{
+	CallActivity("forgetGame");
+}
+
 const char* mobile::PickPrompt()
 {
 	return "Choose your Bayonetta (Xbox 360) disc image (.iso). It is read in place, not copied, "

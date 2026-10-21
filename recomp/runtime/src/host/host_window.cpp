@@ -436,6 +436,10 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 				g_grabbing = true;
 				std::thread(FrameThread).detach();
 			}
+#if IPS3_MOBILE
+			else
+				mobile::ForgetGameImage(); // a wrong pick must not stick: the picker shows again
+#endif
 		}
 #if IPS3_MOBILE
 		else if (!started && !picking)

@@ -48,6 +48,12 @@ public class BayonettaActivity extends SDLActivity {
         return uri != null ? open(Uri.parse(uri)) : -1;
     }
 
+    // Called from native code: the remembered disc image did not start; ask again next time.
+    public int forgetGame() {
+        getPreferences(MODE_PRIVATE).edit().remove(GAME_KEY).apply();
+        return 0;
+    }
+
     // Called from native code: shows the picker; pollPickedGame then reports the result.
     public int pickGame() {
         sPickedFd = -2;

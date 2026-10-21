@@ -84,6 +84,11 @@ std::filesystem::path mobile::FindGameImage()
 }
 @end
 
+void mobile::ForgetGameImage()
+{
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:kBookmarkKey];
+}
+
 const char* mobile::PickPrompt()
 {
     return "Choose your Bayonetta (Xbox 360) disc image (.iso). It is read in place, not copied.\n\n"
@@ -108,7 +113,7 @@ void mobile::PickGameImage(SDL_Window* window, std::function<void(const std::fil
     }
 
     UTType* iso = [UTType typeWithFilenameExtension:@"iso"];
-    NSArray<UTType*>* types = iso ? @[ iso, UTTypeData ] : @[ UTTypeData ];
+    NSArray<UTType*>* types = iso ? @[ iso ] : @[ UTTypeData ]; // only disc images to choose from
     UIDocumentPickerViewController* picker =
         [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:types asCopy:NO];
 
