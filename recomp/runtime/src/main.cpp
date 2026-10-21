@@ -202,6 +202,7 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
         std::thread([]
         {
             const auto begin = std::chrono::steady_clock::now();
+            uint64_t lastFrames = 0;
             for (;;)
             {
                 std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -214,6 +215,9 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
                 bool cpExecuting;
                 ips3_gpu_cp_state(&cpRead, &cpPackets, &cpOpcode, &cpExecuting);
                 ips3_interrupt_counts(&vblanks, &cpInterrupts);
+                const uint64_t frames = ips3_gpu_swap_count();
+                fmt::println(stderr, "[status] {} fps", double(frames - lastFrames) / 5.0);
+                lastFrames = frames;
                 fmt::println(stderr, "[status] {}s: kernel calls {} (last {}), frames {}, GPU ring written {} read {} "
                     "({} packets, last opcode 0x{:02X}{}), interrupts vblank {} cp {}, watches {}/{}",
                     std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - begin).count(),

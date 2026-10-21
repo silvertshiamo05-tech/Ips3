@@ -52,14 +52,13 @@ namespace
 			if (std::chrono::steady_clock::now() - reported > std::chrono::seconds(5))
 			{
 				reported = std::chrono::steady_clock::now();
-				fmt::println(stderr, "[host] swap {}: {} frames shown, {} read-backs failed", swap, grabs, failures);
+				fmt::println(stderr, "[host] swap {}: {} frames shown, {} read-backs not ready", swap, grabs, failures);
 			}
 			if (swap < 4 || swap == lastSwap)
 				continue;
 			if (!ips3_gpu_grab_frame(pixels, width, height))
 			{
-				if (failures++ < 5)
-					fmt::println(stderr, "[host] no picture to show at swap {}", swap);
+				failures++; // the GPU has not finished a copy yet: try again shortly
 				continue;
 			}
 			grabs++;

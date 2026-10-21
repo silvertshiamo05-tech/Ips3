@@ -7,6 +7,7 @@
 
 #include "ips3_gpu.h"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -25,6 +26,7 @@
 #include "xenia/gpu/command_processor.h"
 #include "xenia/gpu/register_file.h"
 #include "xenia/gpu/vulkan/vulkan_graphics_system.h"
+#include "xenia/ui/vulkan/vulkan_presenter.h"
 #include "xenia/gpu/xenos.h"
 #include "xenia/kernel/kernel_state.h"
 #include "xenia/ui/presenter.h"
@@ -97,6 +99,10 @@ void RegisterThread() {
 }  // namespace
 
 bool ips3_gpu_start(uint8_t* guest_membase) {
+#ifdef __APPLE__
+  // MoltenVK logs every pipeline's warnings at its default level; errors are enough.
+  setenv("MVK_CONFIG_LOG_LEVEL", "1", 0);
+#endif
   ips3_guest_membase = guest_membase;
   xe::InitializeLogging("ips3");
 
@@ -318,17 +324,59 @@ bool CaptureOnGpuThread(xe::ui::RawImage& image) {
 }
 }  // namespace
 
+// For the window: the asynchronous read-back (VulkanPresenter::Ips3ReadbackGuestOutput) runs on
+// the GPU command thread without waiting for the GPU; the frame is the latest finished copy, one
+// or two frames old. The 10bpc to 8bpc conversion happens here, off the GPU thread.
 bool ips3_gpu_grab_frame(std::vector<uint8_t>& rgbx, uint32_t& width, uint32_t& height) {
-  xe::ui::RawImage image;
-  if (!CaptureOnGpuThread(image) || !image.width || !image.height) {
+  auto* presenter = static_cast<xe::ui::vulkan::VulkanPresenter*>(
+      g_gpu.graphics ? g_gpu.graphics->presenter() : nullptr);
+  xe::gpu::CommandProcessor* cp = g_gpu.graphics ? g_gpu.graphics->command_processor() : nullptr;
+  if (!presenter || !cp) {
     return false;
   }
-  width = image.width;
-  height = image.height;
-  const size_t row = size_t(width) * 4;
-  rgbx.resize(row * height);
-  for (uint32_t y = 0; y < height; ++y) {
-    std::memcpy(rgbx.data() + row * y, image.data.data() + image.stride * y, row);
+  struct Request {
+    std::mutex mutex;
+    std::condition_variable done;
+    bool finished = false;
+    bool ok = false;
+    std::vector<uint32_t> packed;
+    uint32_t width = 0, height = 0;
+  };
+  auto request = std::make_shared<Request>();
+  cp->CallInThread([request, presenter]() {
+    std::vector<uint32_t> packed;
+    uint32_t w = 0, h = 0;
+    const bool ok = presenter->Ips3ReadbackGuestOutput(packed, w, h);
+    std::lock_guard lock(request->mutex);
+    request->ok = ok;
+    request->packed = std::move(packed);
+    request->width = w;
+    request->height = h;
+    request->finished = true;
+    request->done.notify_all();
+  });
+  std::unique_lock lock(request->mutex);
+  if (!request->done.wait_for(lock, std::chrono::seconds(2), [&] { return request->finished; }) ||
+      !request->ok || !request->width || !request->height) {
+    return false;
+  }
+  static const auto lut = [] {
+    std::array<uint8_t, 1024> table{};
+    for (uint32_t i = 0; i < 1024; ++i) {
+      table[i] = uint8_t(float(i) * (255.0f / 1023.0f) + 0.5f);
+    }
+    return table;
+  }();
+  width = request->width;
+  height = request->height;
+  rgbx.resize(size_t(width) * height * 4);
+  uint8_t* out = rgbx.data();
+  for (uint32_t rgb10 : request->packed) {
+    out[0] = lut[rgb10 & 0x3FF];
+    out[1] = lut[(rgb10 >> 10) & 0x3FF];
+    out[2] = lut[(rgb10 >> 20) & 0x3FF];
+    out[3] = 0xFF;
+    out += 4;
   }
   return true;
 }
