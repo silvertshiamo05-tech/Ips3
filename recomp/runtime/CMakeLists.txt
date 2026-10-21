@@ -1,6 +1,11 @@
 # Bayonetta (Xbox 360) native runtime. GPL-3.0, see recomp/COPYING.
 cmake_minimum_required(VERSION 3.20)
-project(BayonettaRecomp LANGUAGES C CXX)
+# On iOS the host side has Objective-C++ (the file picker); CMake needs it enabled up front.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    project(BayonettaRecomp LANGUAGES C CXX OBJC OBJCXX)
+else()
+    project(BayonettaRecomp LANGUAGES C CXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -78,7 +83,6 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # The iOS app: Bayonetta.app with the runtime as its executable. Xenia's Vulkan backend runs
     # on MoltenVK, linked statically (MOLTENVK_LIB: libMoltenVK.a from the MoltenVK release).
-    enable_language(OBJCXX)
     target_sources(bayonetta PRIVATE src/host/ios_files.mm)
     set(MOLTENVK_LIB "" CACHE FILEPATH "libMoltenVK.a for iOS (arm64)")
     if(NOT MOLTENVK_LIB)
