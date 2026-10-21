@@ -1,0 +1,55 @@
+# Builds the Bayonetta runtime as an iPad app with no game code in it: the recompiled game is
+# replaced by an empty stand-in (recomp/runtime/ci/make_stub_ppc.sh). This checks that the
+# runtime, Xenia's GPU and SDL compile and link for iOS against MoltenVK. The game build itself
+# needs the owner's own copy of the game and never runs in this public repository.
+name: recomp iOS check
+
+on:
+  push:
+    paths: ["recomp/**", ".github/workflows/recomp-ios-check.yml"]
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: brew install ninja glslang spirv-tools
+
+      - name: Sources (Xenia, SDL, XenonRecomp)
+        run: IPS3_SOURCES_ONLY=1 recomp/setup.sh
+
+      - name: MoltenVK
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/moltenvk.tar" \
+            https://github.com/KhronosGroup/MoltenVK/releases/download/v1.3.0/MoltenVK-ios.tar
+          tar xf "$RUNNER_TEMP/moltenvk.tar" -C "$RUNNER_TEMP"
+          echo "MOLTENVK_LIB=$RUNNER_TEMP/MoltenVK/MoltenVK/static/MoltenVK.xcframework/ios-arm64/libMoltenVK.a" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: |
+          recomp/runtime/ci/make_stub_ppc.sh "$RUNNER_TEMP/stub"
+          cmake -S recomp/runtime -B build-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPPC_DIR="$RUNNER_TEMP/stub/ppc" -DMOLTENVK_LIB="$MOLTENVK_LIB"
+
+      - name: Build
+        run: ninja -C build-ios -k 0 bayonetta
+
+      # The app without the game: it starts, shows the file picker and writes its log, which
+      # is enough to try installing and launching it on the device.
+      - name: Package
+        run: |
+          APP=$(find build-ios -maxdepth 1 -name 'Bayonetta.app' -type d)
+          codesign --force --sign - "$APP"
+          mkdir -p ipa/Payload && cp -R "$APP" ipa/Payload/
+          (cd ipa && zip -qry ../Bayonetta-nogame.ipa Payload)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Bayonetta-nogame-ipa
+          path: Bayonetta-nogame.ipa

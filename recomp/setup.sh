@@ -26,13 +26,17 @@ for patch in "$HERE"/patches/*.patch; do
 done
 
 XR="$BUILD/XenonRecomp"
-cmake -S "$XR" -B "$XR/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-ninja -C "$XR/build" XenonAnalyse XenonRecomp
+# IPS3_SOURCES_ONLY=1: fetch and patch everything, but skip building the recompiler (enough to
+# build the runtime, e.g. in CI against a stand-in for the game code).
+if [ -z "${IPS3_SOURCES_ONLY:-}" ]; then
+	cmake -S "$XR" -B "$XR/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+	ninja -C "$XR/build" XenonAnalyse XenonRecomp
 
-clang++ -std=c++20 -O2 "$HERE/tools/xex_dump.cpp" \
-	-I"$XR/XenonUtils" -I"$XR/thirdparty" -I"$XR/thirdparty/fmt/include" -I"$XR/thirdparty/disasm" \
-	"$XR/build/XenonUtils/libXenonUtils.a" $(find "$XR/build/thirdparty" -name '*.a') \
-	-o "$BUILD/xex_dump"
+	clang++ -std=c++20 -O2 "$HERE/tools/xex_dump.cpp" \
+		-I"$XR/XenonUtils" -I"$XR/thirdparty" -I"$XR/thirdparty/fmt/include" -I"$XR/thirdparty/disasm" \
+		"$XR/build/XenonUtils/libXenonUtils.a" $(find "$XR/build/thirdparty" -name '*.a') \
+		-o "$BUILD/xex_dump"
+fi
 
 # The runtime's GPU: Xenia's Xenos emulation and Vulkan backend (BSD-3-Clause), at a pinned
 # commit, with only the source directories it needs, and the libraries it builds on at the
