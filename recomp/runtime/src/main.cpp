@@ -187,6 +187,14 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
 
     MountGame();
 
+    // The CI test build (runtime/ci/make_stub_ppc.sh) has no game code to run.
+    if (PPCFuncMappings[0].guest == 0)
+    {
+        host::ShowError("This is the test build without the game's code. Memory, the disc image "
+            "and the GPU all started; see bayonetta-log.txt for details.");
+        return false;
+    }
+
     fmt::println("Starting guest thread at {:08X}", entry);
     if (ownThread)
         GuestThread::Start({ entry, 0, 0 }, nullptr); // a host thread with a full-size stack
@@ -236,5 +244,12 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    return StartGame(image, savePath, xexPath, false) ? 0 : 1;
+    if (!StartGame(image, savePath, xexPath, false))
+    {
+        // Leave without static destructors: the GPU's threads may already be running.
+        fflush(stdout);
+        fflush(stderr);
+        std::_Exit(1);
+    }
+    return 0;
 }
