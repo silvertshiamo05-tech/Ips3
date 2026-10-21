@@ -94,12 +94,13 @@ Added on top of UnleashedRecomp:
   On Linux it renders with Mesa's llvmpipe (software Vulkan); on iOS the same backend is
   meant to run on MoltenVK.
 
-With `data00.cpk` and `data13.cpk` from the disc, the game finishes its init, runs its main
-loop and **renders its boot logos** (Dolby Digital, CRIWARE) through Xenia's GPU, about 12
-frames a second on llvmpipe. After them the screen stays black: the logo movies
-(`media/movie`) and the core sound archive (`media/se/core.cpk`) are not on hand yet.
+Run from the full disc image, the game plays its whole boot sequence -- the Sofdec intro
+and PlatinumGames movies with their ADX audio, the Dolby Digital and CRIWARE logos -- and then
+the **in-engine prologue cutscene**, through Xenia's GPU on llvmpipe (software Vulkan, about
+12 frames a second). Audio is mixed by the game and handed to the runtime, but not played on
+the host yet.
 
-Next: the movies and sound archives from the disc, then MoltenVK on iOS, input and XMA audio.
+Next: host audio output, input, then MoltenVK on iOS.
 
 ## Tools
 
