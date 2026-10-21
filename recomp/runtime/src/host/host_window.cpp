@@ -15,6 +15,8 @@
 #include "mobile.h"
 
 #include <atomic>
+#include <deque>
+#include <fstream>
 #include <cmath>
 #include <map>
 #include <mutex>
@@ -45,10 +47,19 @@ namespace
 			std::this_thread::sleep_for(std::chrono::milliseconds(16));
 			const uint64_t swap = ips3_gpu_swap_count();
 			uint32_t width, height;
-			if (swap < 4 || swap == lastSwap || !ips3_gpu_grab_frame(pixels, width, height))
+			if (swap < 4 || swap == lastSwap)
 				continue;
+			if (!ips3_gpu_grab_frame(pixels, width, height))
+			{
+				static int failures = 0;
+				if (failures++ < 5)
+					fmt::println(stderr, "[host] no picture to show at swap {}", swap);
+				continue;
+			}
 			lastSwap = swap;
 			static uint64_t grabbed = 0;
+			if (grabbed == 0)
+				fmt::println(stderr, "[host] first frame {}x{} at swap {}", width, height, swap);
 			if (grabbed++ % 200 == 0 && getenv("IPS3_TRACE_FRAMES"))
 			{
 				uint64_t sum = 0;
@@ -361,11 +372,37 @@ namespace
 	}
 }
 
+namespace
+{
+	// Message boxes only open on the window's thread; other threads queue theirs.
+	SDL_threadID g_windowThread = 0;
+	std::mutex g_errorsMutex;
+	std::vector<std::string> g_errors;
+
+	void ShowQueuedErrors()
+	{
+		std::vector<std::string> errors;
+		{
+			std::lock_guard lock(g_errorsMutex);
+			errors.swap(g_errors);
+		}
+		for (const auto& message : errors)
+			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Bayonetta", message.c_str(), g_window);
+	}
+}
+
 void host::ShowError(const std::string& message)
 {
 	fmt::println(stderr, "[host] {}", message);
-	if (WindowMode())
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Bayonetta", message.c_str(), g_window);
+	if (!WindowMode())
+		return;
+	if (g_windowThread != 0 && SDL_ThreadID() != g_windowThread)
+	{
+		std::lock_guard lock(g_errorsMutex);
+		g_errors.push_back(message);
+		return;
+	}
+	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Bayonetta", message.c_str(), g_window);
 }
 
 int host::RunWindow(const std::filesystem::path& image, const std::function<bool(const std::filesystem::path&)>& start)
@@ -398,7 +435,11 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 
 	std::filesystem::path pending = image;
 	bool started = false;
+	bool starting = false;
+	static std::atomic<int> startResult{ -1 }; // -1 while starting, then 1 started or 0 failed (static: the start thread may outlive the loop)
 	bool picking = false;
+	g_windowThread = SDL_ThreadID();
+	auto startedAt = std::chrono::steady_clock::now();
 
 #if IPS3_MOBILE
 	if (pending.empty())
@@ -426,11 +467,22 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 			}
 		}
 
-		if (!started && !pending.empty())
+		// The game starts on a worker thread, so a slow or stuck start (the GPU, the disc) never
+		// freezes the window.
+		if (!started && !starting && !pending.empty())
 		{
 			const auto chosen = pending;
 			pending.clear();
-			started = start(chosen);
+			starting = true;
+			startedAt = std::chrono::steady_clock::now();
+			startResult = -1;
+			std::thread([&start, chosen] { startResult = start(chosen) ? 1 : 0; }).detach();
+		}
+		ShowQueuedErrors();
+		if (starting && startResult != -1)
+		{
+			starting = false;
+			started = startResult == 1;
 			if (started)
 			{
 				g_grabbing = true;
@@ -442,7 +494,7 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 #endif
 		}
 #if IPS3_MOBILE
-		else if (!started && !picking)
+		else if (!started && !starting && !picking)
 		{
 			picking = true;
 			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Bayonetta", mobile::PickPrompt(), g_window);
@@ -453,6 +505,30 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 			});
 		}
 		mobile::PollPicker();
+#endif
+
+#if IPS3_MOBILE
+		// No picture 20 s after starting: show the end of the log, which says what is stuck.
+		static bool reported = false;
+		if ((started || starting) && !reported && !g_frameTexture &&
+			std::chrono::steady_clock::now() - startedAt > std::chrono::seconds(20))
+		{
+			reported = true;
+			fmt::println(stderr, "[host] no picture after 20 s ({}, swap {})",
+				starting ? "still starting" : "running", ips3_gpu_swap_count());
+			std::ifstream log(mobile::DataPath() / "bayonetta-log.txt");
+			std::deque<std::string> tail;
+			for (std::string line; std::getline(log, line);)
+			{
+				tail.push_back(line.substr(0, 120));
+				if (tail.size() > 14)
+					tail.pop_front();
+			}
+			std::string text = "No picture yet. Screenshot this for the developer:\n\n";
+			for (const auto& line : tail)
+				text += line + "\n";
+			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Bayonetta", text.c_str(), g_window);
+		}
 #endif
 
 		uint16_t buttons;
