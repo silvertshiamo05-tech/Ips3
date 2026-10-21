@@ -12,10 +12,10 @@ index 09b671a41..32c1fbfd5 100644
  
  }  // namespace
 diff --git a/src/xenia/base/threading_posix.cc b/src/xenia/base/threading_posix.cc
-index 39c2a4e23..400706679 100644
+index 39c2a4e23..797fa395f 100644
 --- a/src/xenia/base/threading_posix.cc
 +++ b/src/xenia/base/threading_posix.cc
-@@ -51,6 +51,59 @@
+@@ -51,6 +51,85 @@
  #define XE_HAS_SIGEV_THREAD_ID 0
  #endif
  
@@ -24,6 +24,10 @@ index 39c2a4e23..400706679 100644
 +#include <dispatch/dispatch.h>
 +#include <mach/mach.h>
 +#include <mach/mach_time.h>
++#include <cstdio>
++#include <map>
++#include <mutex>
++#include <string>
 +// Two signals for suspend and user callbacks: SIGUSR1 and SIGUSR2 are adjacent.
 +#define SIGRTMIN SIGUSR1
 +#define SIGRTMAX (SIGUSR2 + 1)
@@ -36,8 +40,30 @@ index 39c2a4e23..400706679 100644
 +  return long(id);
 +}
 +#define syscall(number, ...) ips3_syscall(number)
-+// Darwin names only the calling thread.
++// Darwin names only the calling thread: names given from another thread are
++// kept here, for Ips3's per-thread status lines (ips3_thread_name).
++static std::mutex& ips3_names_mutex() {
++  static std::mutex mutex;
++  return mutex;
++}
++static std::map<pthread_t, std::string>& ips3_names() {
++  static std::map<pthread_t, std::string> names;
++  return names;
++}
++extern "C" bool ips3_thread_name(pthread_t thread, char* name, size_t size) {
++  std::lock_guard<std::mutex> lock(ips3_names_mutex());
++  auto it = ips3_names().find(thread);
++  if (it == ips3_names().end()) {
++    return false;
++  }
++  snprintf(name, size, "%s", it->second.c_str());
++  return true;
++}
 +static inline int ips3_setname(pthread_t thread, const char* name) {
++  {
++    std::lock_guard<std::mutex> lock(ips3_names_mutex());
++    ips3_names()[thread] = name;
++  }
 +  return pthread_equal(thread, pthread_self()) ? pthread_setname_np(name) : 0;
 +}
 +#define pthread_setname_np ips3_setname
@@ -75,7 +101,7 @@ index 39c2a4e23..400706679 100644
  namespace xe {
  namespace threading {
  
-@@ -787,7 +840,7 @@ class PosixCondition<Thread> final : public PosixConditionBase {
+@@ -787,7 +866,7 @@ class PosixCondition<Thread> final : public PosixConditionBase {
      if (state_ != State::kUninitialized && state_ != State::kFinished) {
        pthread_setname_np(thread_, std::string(name).c_str());
  #if XE_PLATFORM_ANDROID
@@ -84,7 +110,7 @@ index 39c2a4e23..400706679 100644
  #endif
      }
    }
-@@ -803,7 +856,9 @@ class PosixCondition<Thread> final : public PosixConditionBase {
+@@ -803,7 +882,9 @@ class PosixCondition<Thread> final : public PosixConditionBase {
    }
  #endif
  

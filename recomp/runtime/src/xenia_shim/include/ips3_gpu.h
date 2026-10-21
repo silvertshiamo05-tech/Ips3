@@ -34,6 +34,8 @@ void ips3_gpu_set_interrupt_callback(uint32_t callback, uint32_t user_data);
 // the front buffer's texture fetch constant (6 big-endian dwords).
 void ips3_gpu_write_swap(uint32_t* buffer, const uint32_t* fetch, uint32_t width, uint32_t height);
 uint64_t ips3_gpu_swap_count();
+// Total time Xenia waited for the GPU to finish submitted work, and how many waits.
+void ips3_gpu_wait_stats(uint64_t* wait_ns, uint64_t* waits);
 // The command ring: where the game has written to, and where the GPU has read to.
 void ips3_gpu_ring_state(uint32_t* write_pointer, uint32_t* read_pointer);
 // Xenia's command processor: where it has read the ring to, PM4 packets executed, the last

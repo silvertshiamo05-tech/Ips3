@@ -45,6 +45,7 @@ target_sources(bayonetta PRIVATE
     src/host/host_sdl.cpp
     src/host/host_window.cpp
     src/host/settings.cpp
+    src/host/thread_usage.cpp
     src/cpu/guest_thread.cpp
     src/gpu/interrupts.cpp
     src/kernel/heap.cpp

@@ -19,6 +19,7 @@
 
 #include <host/mobile.h>
 #include <host/settings.h>
+#include <host/thread_usage.h>
 
 #include <cpu/guest_thread.h>
 #include <kernel/function.h>
@@ -221,6 +222,14 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
                 ips3_interrupt_counts(&vblanks, &cpInterrupts);
                 const uint64_t frames = ips3_gpu_swap_count();
                 fmt::println(stderr, "[status] {} fps", double(frames - lastFrames) / 5.0);
+                // Where the time goes: each thread's CPU use, and Xenia waiting for the GPU.
+                static uint64_t lastWaitNs = 0, lastWaits = 0;
+                uint64_t waitNs, waits;
+                ips3_gpu_wait_stats(&waitNs, &waits);
+                fmt::println(stderr, "[status] cpu: {}; waited for the GPU {} ms ({} times)",
+                    host::ThreadUsage(), (waitNs - lastWaitNs) / 1000000, waits - lastWaits);
+                lastWaitNs = waitNs;
+                lastWaits = waits;
                 const bool stalled = frames == lastFrames;
                 lastFrames = frames;
                 fmt::println(stderr, "[status] {}s: kernel calls {} (last {}), frames {}, GPU ring written {} read {} "

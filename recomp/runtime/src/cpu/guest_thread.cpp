@@ -146,29 +146,34 @@ uint32_t GuestThreadHandle::Wait(uint32_t timeout)
     return STATUS_WAIT_0;
 }
 
-#ifdef __APPLE__
 #include <pthread.h>
+#ifdef __APPLE__
 #include <sys/qos.h>
+#endif
 
-// Ips3: Apple's chips have few fast cores and more slow ones, and the scheduler picks by quality
-// of service. The game's main thread (the first, which builds the frames) gets the highest, the
-// other guest threads the next; IPS3_FAST_CORES=0 leaves them all at the default.
-static void SetGuestThreadQos()
+// Ips3: names each host thread that runs guest code ("guest 0" is the game's main thread) for
+// the per-thread status lines. On Apple's chips, with few fast cores and more slow ones that the
+// scheduler picks by quality of service, the main thread (which builds the frames) also gets the
+// highest and the others the next; IPS3_FAST_CORES=0 leaves them all at the default.
+static void SetupGuestHostThread()
 {
     static std::atomic<int> started{ 0 };
-    const bool first = started++ == 0;
+    const int index = started++;
+    char name[16];
+    snprintf(name, sizeof(name), "guest %d", index);
+#ifdef __APPLE__
+    pthread_setname_np(name);
     const char* fast = getenv("IPS3_FAST_CORES");
-    if (fast && fast[0] == '0')
-        return;
-    pthread_set_qos_class_self_np(first ? QOS_CLASS_USER_INTERACTIVE : QOS_CLASS_USER_INITIATED, 0);
-}
+    if (!fast || fast[0] != '0')
+        pthread_set_qos_class_self_np(index == 0 ? QOS_CLASS_USER_INTERACTIVE : QOS_CLASS_USER_INITIATED, 0);
+#else
+    pthread_setname_np(pthread_self(), name);
 #endif
+}
 
 uint32_t GuestThread::Start(const GuestThreadParams& params)
 {
-#ifdef __APPLE__
-    SetGuestThreadQos();
-#endif
+    SetupGuestHostThread();
     const auto procMask = (uint8_t)(params.flags >> 24);
     const auto cpuNumber = procMask == 0 ? 0 : 7 - std::countl_zero(procMask);
 

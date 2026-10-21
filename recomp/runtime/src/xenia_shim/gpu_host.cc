@@ -17,6 +17,7 @@
 #include <fstream>
 #include <thread>
 
+#include "xenia/ui/gpu_completion_timeline.h"
 #include "xenia/base/byte_order.h"
 #include "xenia/base/cvar.h"
 #include "xenia/base/logging.h"
@@ -242,6 +243,11 @@ void ips3_gpu_write_swap(uint32_t* buffer, const uint32_t* fetch, uint32_t width
 }
 
 uint64_t ips3_gpu_swap_count() { return g_gpu.swaps; }
+
+void ips3_gpu_wait_stats(uint64_t* wait_ns, uint64_t* waits) {
+  *wait_ns = ips3_gpu_wait_ns.load();
+  *waits = ips3_gpu_waits.load();
+}
 
 void ips3_gpu_cp_state(uint32_t* read_pointer, uint64_t* packets, uint32_t* last_opcode,
                        bool* executing) {

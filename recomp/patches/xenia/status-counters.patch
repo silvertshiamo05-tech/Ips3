@@ -1,5 +1,5 @@
 diff --git a/src/xenia/gpu/command_processor.cc b/src/xenia/gpu/command_processor.cc
-index 16b00f6e8..c0f9bc47a 100644
+index 16b00f6e8..ce69e4d9f 100644
 --- a/src/xenia/gpu/command_processor.cc
 +++ b/src/xenia/gpu/command_processor.cc
 @@ -9,6 +9,11 @@
@@ -14,7 +14,7 @@ index 16b00f6e8..c0f9bc47a 100644
  #include <algorithm>
  
  #include "third_party/fmt/include/fmt/format.h"
-@@ -360,6 +365,13 @@ void CommandProcessor::SetDesiredSwapPostEffect(
+@@ -360,6 +365,14 @@ void CommandProcessor::SetDesiredSwapPostEffect(
  }
  
  void CommandProcessor::WorkerThreadMain() {
@@ -24,11 +24,12 @@ index 16b00f6e8..c0f9bc47a 100644
 +  if (const char* fast = getenv("IPS3_FAST_CORES"); !fast || fast[0] != '0') {
 +    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
 +  }
++  pthread_setname_np("GPU Commands");
 +#endif
    if (!SetupContext()) {
      xe::FatalError("Unable to setup command processor internal state");
      return;
-@@ -407,7 +419,10 @@ void CommandProcessor::WorkerThreadMain() {
+@@ -407,7 +420,10 @@ void CommandProcessor::WorkerThreadMain() {
      assert_true(read_ptr_index_ != write_ptr_index);
  
      // Execute. Note that we handle wraparound transparently.
@@ -69,3 +70,37 @@ index 1d9b7d985..82fb7d218 100644
  
    if (COMMAND_PROCESSOR::GetCurrentRingReadCount() >=
        count * sizeof(uint32_t)) {
+diff --git a/src/xenia/ui/gpu_completion_timeline.h b/src/xenia/ui/gpu_completion_timeline.h
+index aa784bf34..049d44c52 100644
+--- a/src/xenia/ui/gpu_completion_timeline.h
++++ b/src/xenia/ui/gpu_completion_timeline.h
+@@ -11,10 +11,16 @@
+ #define XENIA_UI_GPU_COMPLETION_TIMELINE_H_
+ 
+ #include <algorithm>
++#include <atomic>
++#include <chrono>
+ #include <cstdint>
+ 
+ #include "xenia/base/assert.h"
+ 
++// Ips3: time spent waiting for the GPU to finish submitted work (status lines).
++inline std::atomic<uint64_t> ips3_gpu_wait_ns{0};
++inline std::atomic<uint64_t> ips3_gpu_waits{0};
++
+ namespace xe {
+ namespace ui {
+ 
+@@ -55,7 +61,12 @@ class GPUCompletionTimeline {
+   bool AwaitSubmissionAndUpdateCompleted(const uint64_t awaited_submission) {
+     assert_true(awaited_submission < upcoming_submission_);
+     if (UpdateAndGetCompletedSubmission() < awaited_submission) {
++      const auto begin = std::chrono::steady_clock::now();
+       AwaitSubmissionImpl(awaited_submission);
++      ips3_gpu_wait_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
++                                       std::chrono::steady_clock::now() - begin)
++                                       .count());
++      ++ips3_gpu_waits;
+     }
+     // Recheck, the wait might have been incomplete if there was an error.
+     return UpdateAndGetCompletedSubmission() >= awaited_submission;
