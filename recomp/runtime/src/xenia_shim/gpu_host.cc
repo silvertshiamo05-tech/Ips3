@@ -38,6 +38,9 @@ xe::Memory* ips3_create_gpu_memory();
 void ips3_install_write_watch_handler();
 void ips3_watch_stats(uint64_t* arms, uint64_t* triggers);
 
+DECLARE_int32(draw_resolution_scale_x);
+DECLARE_int32(draw_resolution_scale_y);
+
 namespace {
 
 constexpr uint32_t kRegisterWindow = 0x7FC80000;
@@ -151,6 +154,44 @@ bool ips3_gpu_start(uint8_t* guest_membase) {
     }).detach();
   }
   return true;
+}
+
+void ips3_gpu_set_resolution_scale(uint32_t scale) {
+  cvars::draw_resolution_scale_x = int32_t(scale);
+  cvars::draw_resolution_scale_y = int32_t(scale);
+}
+
+// The command thread parks in a function it runs between commands, until resumed.
+void ips3_gpu_set_paused(bool paused) {
+  static std::mutex mutex;
+  static std::condition_variable changed;
+  static bool want_paused = false, parked = false;
+  xe::gpu::CommandProcessor* cp = g_gpu.graphics ? g_gpu.graphics->command_processor() : nullptr;
+  if (!cp) {
+    return;
+  }
+  std::unique_lock lock(mutex);
+  if (paused == want_paused) {
+    return;
+  }
+  want_paused = paused;
+  if (!paused) {
+    changed.notify_all();
+    return;
+  }
+  cp->CallInThread([] {
+    std::unique_lock lock(mutex);
+    parked = true;
+    changed.notify_all();
+    changed.wait(lock, [] { return !want_paused; });
+    parked = false;
+  });
+  // iOS allows a few seconds after the app leaves the screen: wait for the GPU work in flight.
+  changed.wait_for(lock, std::chrono::seconds(3), [] { return parked; });
+  // With asynchronous submission MoltenVK hands the last work to Metal on its own queue
+  // shortly after: give it that time before iOS stops GPU access.
+  lock.unlock();
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 
 void ips3_gpu_initialize_ring_buffer(uint32_t gpu_address, uint32_t size_log2) {

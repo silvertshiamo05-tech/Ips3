@@ -98,6 +98,11 @@ const char* mobile::PickPrompt()
         "You can also put the .iso in this app's Documents folder.";
 }
 
+bool mobile::MenuApp()
+{
+    return [[[NSBundle mainBundle] objectForInfoDictionaryKey:@"Ips3Menu"] boolValue];
+}
+
 void mobile::PollPicker()
 {
 }

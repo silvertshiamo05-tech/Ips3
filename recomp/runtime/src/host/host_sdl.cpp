@@ -10,6 +10,7 @@
 #include <stdafx.h>
 #include "host.h"
 #include "host_internal.h"
+#include "settings.h"
 
 #include <hid/hid.h>
 
@@ -260,6 +261,11 @@ bool host::WindowMode()
 
 bool host::AudioOpen()
 {
+	if (!CurrentSettings().sound)
+	{
+		fmt::println(stderr, "[host] sound is off in the settings");
+		return false;
+	}
 	if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
 	{
 		fmt::println(stderr, "[host] no audio: {}", SDL_GetError());

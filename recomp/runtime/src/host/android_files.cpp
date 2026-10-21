@@ -104,6 +104,11 @@ std::filesystem::path mobile::FindGameImage()
 	return {};
 }
 
+bool mobile::MenuApp()
+{
+	return false; // the Android build has no menu variant (yet)
+}
+
 void mobile::ForgetGameImage()
 {
 	CallActivity("forgetGame");

@@ -1,8 +1,34 @@
 diff --git a/src/xenia/gpu/command_processor.cc b/src/xenia/gpu/command_processor.cc
-index 16b00f6e8..7c2f5bd1f 100644
+index 16b00f6e8..c0f9bc47a 100644
 --- a/src/xenia/gpu/command_processor.cc
 +++ b/src/xenia/gpu/command_processor.cc
-@@ -407,7 +407,10 @@ void CommandProcessor::WorkerThreadMain() {
+@@ -9,6 +9,11 @@
+ 
+ #include "xenia/gpu/command_processor.h"
+ 
++#if XE_PLATFORM_MAC
++#include <pthread.h>
++#include <sys/qos.h>
++#endif
++
+ #include <algorithm>
+ 
+ #include "third_party/fmt/include/fmt/format.h"
+@@ -360,6 +365,13 @@ void CommandProcessor::SetDesiredSwapPostEffect(
+ }
+ 
+ void CommandProcessor::WorkerThreadMain() {
++#if XE_PLATFORM_MAC
++  // Ips3: the command thread is most of the GPU work; on Apple's chips keep it on a fast core
++  // (IPS3_FAST_CORES=0 leaves it at the default quality of service).
++  if (const char* fast = getenv("IPS3_FAST_CORES"); !fast || fast[0] != '0') {
++    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
++  }
++#endif
+   if (!SetupContext()) {
+     xe::FatalError("Unable to setup command processor internal state");
+     return;
+@@ -407,7 +419,10 @@ void CommandProcessor::WorkerThreadMain() {
      assert_true(read_ptr_index_ != write_ptr_index);
  
      // Execute. Note that we handle wraparound transparently.

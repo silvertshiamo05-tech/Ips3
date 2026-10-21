@@ -18,6 +18,7 @@
 #include <SDL_main.h> // on iOS and Android, SDL runs the app and calls this main
 
 #include <host/mobile.h>
+#include <host/settings.h>
 
 #include <cpu/guest_thread.h>
 #include <kernel/function.h>
@@ -165,6 +166,9 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
     // Guest allocations (the loader's included) come from the heaps.
     g_userHeap.Init();
 
+    // Before the GPU starts: MoltenVK and Xenia read some of them only then.
+    host::ApplyStartupSettings();
+
     if (!ips3_gpu_start(g_memory.base))
     {
         host::ShowError("Could not start the Vulkan GPU.");
@@ -197,7 +201,7 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
 
     // A status line every 5 s (phones and tablets always, else IPS3_HEARTBEAT=1): shows whether
     // the game's code, its frames and the GPU are moving when the screen is not.
-    if (IPS3_MOBILE || getenv("IPS3_HEARTBEAT"))
+    if ((IPS3_MOBILE && host::CurrentSettings().statusLog) || getenv("IPS3_HEARTBEAT"))
     {
         std::thread([]
         {
@@ -217,6 +221,7 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
                 ips3_interrupt_counts(&vblanks, &cpInterrupts);
                 const uint64_t frames = ips3_gpu_swap_count();
                 fmt::println(stderr, "[status] {} fps", double(frames - lastFrames) / 5.0);
+                const bool stalled = frames == lastFrames;
                 lastFrames = frames;
                 fmt::println(stderr, "[status] {}s: kernel calls {} (last {}), frames {}, GPU ring written {} read {} "
                     "({} packets, last opcode 0x{:02X}{}), interrupts vblank {} cp {}, watches {}/{}",
@@ -225,7 +230,8 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
                     written, cpRead, cpPackets, cpOpcode, cpExecuting ? ", executing" : "", vblanks, cpInterrupts,
                     triggers, arms);
                 // What each guest thread is doing (the ones that made a call since the last line,
-                // or are blocked inside one).
+                // or are blocked inside one), when no frame came in that time.
+                if (stalled)
                 ips3::ForEachThreadActivity([](const ips3::ThreadActivity& activity)
                 {
                     const char* call = activity.call.load();

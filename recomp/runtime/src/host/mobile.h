@@ -40,6 +40,9 @@ namespace mobile
 	// launches), or an empty path if cancelled.
 	void PickGameImage(SDL_Window* window, std::function<void(const std::filesystem::path&)> picked);
 
+	// The launcher-menu build of the app (iOS: Ips3Menu in Info.plist).
+	bool MenuApp();
+
 	// Called every frame: delivers a finished pick (Android's picker answers asynchronously).
 	void PollPicker();
 }

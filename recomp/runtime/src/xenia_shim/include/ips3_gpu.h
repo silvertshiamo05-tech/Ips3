@@ -21,6 +21,10 @@ inline uint32_t ips3_e_view_shift() {
 
 // Starts the Vulkan GPU over guest memory at guest_membase.
 bool ips3_gpu_start(uint8_t* guest_membase);
+// Before ips3_gpu_start: render at 1x or 2x the console's resolution.
+void ips3_gpu_set_resolution_scale(uint32_t scale);
+// Stops and restarts Xenia's command processor (iOS forbids GPU work in the background).
+void ips3_gpu_set_paused(bool paused);
 
 void ips3_gpu_initialize_ring_buffer(uint32_t gpu_address, uint32_t size_log2);
 void ips3_gpu_enable_read_pointer_writeback(uint32_t gpu_address, uint32_t block_size_log2);

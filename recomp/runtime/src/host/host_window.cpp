@@ -13,8 +13,11 @@
 #include <SDL.h>
 
 #include "mobile.h"
+#include "settings.h"
 
+#include <array>
 #include <atomic>
+#include <cctype>
 #include <deque>
 #include <fstream>
 #include <cmath>
@@ -36,6 +39,9 @@ namespace
 	bool g_frameNew = false;
 	std::atomic<bool> g_grabbing{ false };
 
+	// The app is in the background, where iOS lets no app use the GPU.
+	std::atomic<bool> g_background{ false };
+
 	void FrameThread()
 	{
 		std::vector<uint8_t> pixels;
@@ -54,7 +60,7 @@ namespace
 				reported = std::chrono::steady_clock::now();
 				fmt::println(stderr, "[host] swap {}: {} frames shown, {} read-backs not ready", swap, grabs, failures);
 			}
-			if (swap < 4 || swap == lastSwap)
+			if (swap < 4 || swap == lastSwap || g_background)
 				continue;
 			if (!ips3_gpu_grab_frame(pixels, width, height))
 			{
@@ -123,32 +129,69 @@ namespace
 		SDL_RenderFillRectF(g_renderer, &rect);
 	}
 
-	// A 5x7 pixel font with the letters the button labels use.
+	// A 5x7 pixel font: letters, digits and the punctuation the menu uses.
 	const std::map<char, std::array<const char*, 7>> FONT =
 	{
 		{ 'A', { ".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#" } },
 		{ 'B', { "####.", "#...#", "#...#", "####.", "#...#", "#...#", "####." } },
 		{ 'C', { ".####", "#....", "#....", "#....", "#....", "#....", ".####" } },
+		{ 'D', { "####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####." } },
+		{ 'E', { "#####", "#....", "#....", "####.", "#....", "#....", "#####" } },
+		{ 'F', { "#####", "#....", "#....", "####.", "#....", "#....", "#...." } },
+		{ 'G', { ".####", "#....", "#....", "#.###", "#...#", "#...#", ".###." } },
+		{ 'H', { "#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#" } },
+		{ 'I', { "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "#####" } },
+		{ 'J', { "..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.." } },
 		{ 'K', { "#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#" } },
 		{ 'L', { "#....", "#....", "#....", "#....", "#....", "#....", "#####" } },
+		{ 'M', { "#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#" } },
+		{ 'N', { "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#", "#...#" } },
+		{ 'O', { ".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###." } },
+		{ 'P', { "####.", "#...#", "#...#", "####.", "#....", "#....", "#...." } },
+		{ 'Q', { ".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#" } },
 		{ 'R', { "####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#" } },
 		{ 'S', { ".####", "#....", "#....", ".###.", "....#", "....#", "####." } },
 		{ 'T', { "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.." } },
+		{ 'U', { "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###." } },
+		{ 'V', { "#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.." } },
+		{ 'W', { "#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#" } },
 		{ 'X', { "#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#" } },
 		{ 'Y', { "#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.." } },
+		{ 'Z', { "#####", "....#", "...#.", "..#..", ".#...", "#....", "#####" } },
+		{ '0', { ".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###." } },
+		{ '1', { "..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###." } },
+		{ '2', { ".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####" } },
+		{ '3', { "####.", "....#", "....#", ".###.", "....#", "....#", "####." } },
+		{ '4', { "...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#." } },
+		{ '5', { "#####", "#....", "####.", "....#", "....#", "#...#", ".###." } },
+		{ '6', { ".###.", "#....", "#....", "####.", "#...#", "#...#", ".###." } },
+		{ '7', { "#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..." } },
+		{ '8', { ".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###." } },
+		{ '9', { ".###.", "#...#", "#...#", ".####", "....#", "....#", ".###." } },
+		{ ':', { ".....", "..#..", "..#..", ".....", "..#..", "..#..", "....." } },
+		{ '.', { ".....", ".....", ".....", ".....", ".....", ".##..", ".##.." } },
+		{ '-', { ".....", ".....", ".....", "#####", ".....", ".....", "....." } },
+		{ '/', { "....#", "....#", "...#.", "..#..", ".#...", "#....", "#...." } },
+		{ '%', { "##..#", "##..#", "...#.", "..#..", ".#...", "#..##", "#..##" } },
+		{ '<', { "...#.", "..#..", ".#...", "#....", ".#...", "..#..", "...#." } },
+		{ '>', { ".#...", "..#..", "...#.", "....#", "...#.", "..#..", ".#..." } },
+		{ '_', { ".....", ".....", ".....", ".....", ".....", ".....", "#####" } },
+		{ '(', { "...#.", "..#..", ".#...", ".#...", ".#...", "..#..", "...#." } },
+		{ ')', { ".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..." } },
 	};
 
-	// Draws `text` centred on (cx, cy), `height` pixels tall.
-	void DrawText(const char* text, float cx, float cy, float height, SDL_Color color)
+	// Draws `text` `height` pixels tall, centred on cy and placed on x by `align`: 0 starts at x,
+	// 0.5 is centred on it, 1 ends at it.
+	void DrawText(const char* text, float x, float cy, float height, SDL_Color color, float align = 0.5f)
 	{
 		const float px = height / 7.0f;
 		const size_t length = strlen(text);
-		float x = cx - (length * 6 - 1) * px / 2.0f;
+		x -= (length * 6 - 1) * px * align;
 		const float y = cy - height / 2.0f;
 		SDL_SetRenderDrawColor(g_renderer, color.r, color.g, color.b, color.a);
 		for (size_t i = 0; i < length; i++, x += 6 * px)
 		{
-			const auto glyph = FONT.find(text[i]);
+			const auto glyph = FONT.find(char(toupper((unsigned char)text[i])));
 			if (glyph == FONT.end())
 				continue;
 			for (int row = 0; row < 7; row++)
@@ -277,6 +320,9 @@ namespace
 
 	bool ShowTouchControls()
 	{
+		const int mode = host::CurrentSettings().touchControls;
+		if (mode != 0)
+			return mode == 1;
 #if IPS3_MOBILE
 		return !host::ControllerConnected();
 #else
@@ -315,6 +361,12 @@ namespace
 		float w, h;
 		WindowSize(w, h);
 		SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_BLEND);
+		const int opacity = host::CurrentSettings().touchOpacity;
+		auto fade = [opacity](SDL_Color color)
+		{
+			color.a = uint8_t(color.a * opacity / 100);
+			return color;
+		};
 
 		for (const auto& button : BUTTONS)
 		{
@@ -323,10 +375,10 @@ namespace
 				color.a = 230;
 			const float cx = button.x * w, cy = button.y * h, r = button.radius * h;
 			if (button.round)
-				FillCircle(cx, cy, r, color);
+				FillCircle(cx, cy, r, fade(color));
 			else
-				FillRect(cx - r * 1.3f, cy - r, r * 2.6f, r * 2, color);
-			DrawText(button.label, cx, cy, r * (button.round ? 0.8f : 0.6f), { 255, 255, 255, 220 });
+				FillRect(cx - r * 1.3f, cy - r, r * 2.6f, r * 2, fade(color));
+			DrawText(button.label, cx, cy, r * (button.round ? 0.8f : 0.6f), fade({ 255, 255, 255, 220 }));
 		}
 
 		for (int i = 0; i < int(std::size(STICKS)); i++)
@@ -335,9 +387,230 @@ namespace
 			float vx, vy;
 			StickValue(i, w, h, vx, vy);
 			const float cx = stick.x * w, cy = stick.y * h, r = stick.radius * h;
-			FillCircle(cx, cy, r, { 90, 90, 90, 110 });
-			FillCircle(cx + vx * r * 0.6f, cy - vy * r * 0.6f, r * 0.45f, { 200, 200, 200, 170 });
+			FillCircle(cx, cy, r, fade({ 90, 90, 90, 110 }));
+			FillCircle(cx + vx * r * 0.6f, cy - vy * r * 0.6f, r * 0.45f, fade({ 200, 200, 200, 170 }));
 		}
+	}
+
+	// ---- Launcher menu (the menu app) ---------------------------------------------------------
+	// Settings to change before the game starts. Tap a line, or use the D-pad and A (left and
+	// right step a setting back and forth).
+
+	enum class MenuAction { None, Start, ChooseDisc };
+
+	struct MenuItem
+	{
+		const char* label;
+		const char* help;
+		std::string (*value)();       // nullptr for the actions
+		void (*change)(int step);
+		MenuAction action;
+	};
+
+	std::string OnOff(bool on) { return on ? "ON" : "OFF"; }
+	host::Settings& S() { return host::CurrentSettings(); }
+
+	const MenuItem MENU[] =
+	{
+		{ "START GAME", "START BAYONETTA WITH THESE SETTINGS", nullptr, nullptr, MenuAction::Start },
+		{ "RESOLUTION", "2X IS SHARPER BUT MUCH SLOWER",
+			[] { return std::string(S().resolutionScale == 2 ? "2X" : "1X"); },
+			[](int) { S().resolutionScale = S().resolutionScale == 1 ? 2 : 1; }, MenuAction::None },
+		{ "SHOW FPS", "THE FRAME RATE AT THE TOP OF THE SCREEN",
+			[] { return OnOff(S().showFps); }, [](int) { S().showFps = !S().showFps; }, MenuAction::None },
+		{ "TOUCH CONTROLS", "AUTO HIDES THEM WHILE A CONTROLLER IS CONNECTED",
+			[] { return std::string(S().touchControls == 0 ? "AUTO" : S().touchControls == 1 ? "ALWAYS" : "HIDDEN"); },
+			[](int step) { S().touchControls = (S().touchControls + step + 3) % 3; }, MenuAction::None },
+		{ "TOUCH OPACITY", "HOW SOLID THE TOUCH BUTTONS LOOK",
+			[] { return fmt::format("{}%", S().touchOpacity); },
+			[](int step)
+			{
+				const int next = S().touchOpacity + step * 25;
+				S().touchOpacity = next > 100 ? 25 : next < 25 ? 100 : next;
+			}, MenuAction::None },
+		{ "SOUND", "TURNING IT OFF SAVES A LITTLE CPU TIME",
+			[] { return OnOff(S().sound); }, [](int) { S().sound = !S().sound; }, MenuAction::None },
+		{ "FAST CORES", "ASK IOS TO RUN THE GAME AND GPU ON THE FAST CPU CORES",
+			[] { return OnOff(S().fastCores); }, [](int) { S().fastCores = !S().fastCores; }, MenuAction::None },
+		{ "ASYNC GPU SUBMIT", "SEND GPU WORK WITHOUT WAITING. TURN OFF IF THE PICTURE GLITCHES",
+			[] { return OnOff(S().asyncGpuSubmit); }, [](int) { S().asyncGpuSubmit = !S().asyncGpuSubmit; }, MenuAction::None },
+		{ "STATUS LOG", "DIAGNOSTIC LINES IN BAYONETTA-LOG.TXT EVERY 5 SECONDS",
+			[] { return OnOff(S().statusLog); }, [](int) { S().statusLog = !S().statusLog; }, MenuAction::None },
+#if IPS3_MOBILE
+		{ "CHOOSE DISC IMAGE", "PICK ANOTHER .ISO FROM FILES", nullptr, nullptr, MenuAction::ChooseDisc },
+#endif
+	};
+	constexpr int MENU_SIZE = int(std::size(MENU));
+
+	int g_menuSelected = 0;
+	int g_menuPressed = -1; // the line a finger went down on
+
+	MenuAction ActivateMenu(int index, int step)
+	{
+		g_menuSelected = index;
+		const MenuItem& item = MENU[index];
+		if (item.action != MenuAction::None)
+			return item.action;
+		item.change(step);
+		host::SaveSettings();
+		return MenuAction::None;
+	}
+
+	struct MenuLayout
+	{
+		float top, rowHeight, left, right;
+	};
+	MenuLayout GetMenuLayout(float w, float h)
+	{
+		return { h * 0.19f, h * 0.70f / MENU_SIZE, w * 0.12f, w * 0.88f };
+	}
+
+	int MenuRowAt(float x, float y)
+	{
+		float w, h;
+		WindowSize(w, h);
+		const MenuLayout layout = GetMenuLayout(w, h);
+		x *= w;
+		y *= h;
+		if (x < layout.left || x > layout.right || y < layout.top)
+			return -1;
+		const int row = int((y - layout.top) / layout.rowHeight);
+		return row < MENU_SIZE ? row : -1;
+	}
+
+	// Handles one event while the menu shows; returns what to do.
+	MenuAction MenuEvent(const SDL_Event& event)
+	{
+		switch (event.type)
+		{
+		case SDL_FINGERDOWN:
+			g_menuPressed = MenuRowAt(event.tfinger.x, event.tfinger.y);
+			if (g_menuPressed >= 0)
+				g_menuSelected = g_menuPressed;
+			break;
+		case SDL_FINGERUP:
+		{
+			const int row = MenuRowAt(event.tfinger.x, event.tfinger.y);
+			const int pressed = g_menuPressed;
+			g_menuPressed = -1;
+			if (row >= 0 && row == pressed)
+				return ActivateMenu(row, 1);
+			break;
+		}
+		case SDL_CONTROLLERBUTTONDOWN:
+			switch (event.cbutton.button)
+			{
+			case SDL_CONTROLLER_BUTTON_DPAD_UP: g_menuSelected = (g_menuSelected + MENU_SIZE - 1) % MENU_SIZE; break;
+			case SDL_CONTROLLER_BUTTON_DPAD_DOWN: g_menuSelected = (g_menuSelected + 1) % MENU_SIZE; break;
+			case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+				if (MENU[g_menuSelected].change)
+					return ActivateMenu(g_menuSelected, -1);
+				break;
+			case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+				if (MENU[g_menuSelected].change)
+					return ActivateMenu(g_menuSelected, 1);
+				break;
+			case SDL_CONTROLLER_BUTTON_A: return ActivateMenu(g_menuSelected, 1);
+			case SDL_CONTROLLER_BUTTON_START: return MenuAction::Start;
+			}
+			break;
+		case SDL_KEYDOWN: // desktops
+			switch (event.key.keysym.sym)
+			{
+			case SDLK_UP: g_menuSelected = (g_menuSelected + MENU_SIZE - 1) % MENU_SIZE; break;
+			case SDLK_DOWN: g_menuSelected = (g_menuSelected + 1) % MENU_SIZE; break;
+			case SDLK_LEFT:
+				if (MENU[g_menuSelected].change)
+					return ActivateMenu(g_menuSelected, -1);
+				break;
+			case SDLK_RIGHT:
+				if (MENU[g_menuSelected].change)
+					return ActivateMenu(g_menuSelected, 1);
+				break;
+			case SDLK_RETURN: return ActivateMenu(g_menuSelected, 1);
+			}
+			break;
+		}
+		return MenuAction::None;
+	}
+
+	void DrawMenu(const std::string& disc)
+	{
+		float w, h;
+		WindowSize(w, h);
+		SDL_SetRenderDrawBlendMode(g_renderer, SDL_BLENDMODE_BLEND);
+		const MenuLayout layout = GetMenuLayout(w, h);
+		const float text = std::min(layout.rowHeight * 0.42f, h * 0.04f);
+
+		DrawText("BAYONETTA", w / 2, h * 0.075f, h * 0.07f, { 235, 200, 120, 255 });
+		DrawText(disc.c_str(), w / 2, h * 0.145f, text * 0.7f, { 170, 170, 170, 255 });
+
+		for (int i = 0; i < MENU_SIZE; i++)
+		{
+			const MenuItem& item = MENU[i];
+			const float y = layout.top + i * layout.rowHeight;
+			const bool selected = i == g_menuSelected;
+			FillRect(layout.left, y + 2, layout.right - layout.left, layout.rowHeight - 4,
+				selected ? SDL_Color{ 120, 70, 140, 220 } : SDL_Color{ 40, 40, 48, 200 });
+			const float cy = y + layout.rowHeight / 2;
+			const SDL_Color white{ 255, 255, 255, 255 };
+			if (item.value)
+			{
+				DrawText(item.label, layout.left + w * 0.03f, cy, text, white, 0.0f);
+				DrawText(item.value().c_str(), layout.right - w * 0.03f, cy, text, { 250, 220, 140, 255 }, 1.0f);
+			}
+			else
+			{
+				DrawText(item.label, w / 2, cy, text, item.action == MenuAction::Start ? SDL_Color{ 140, 240, 140, 255 } : white);
+			}
+		}
+
+		DrawText(MENU[g_menuSelected].help, w / 2, h * 0.945f, text * 0.7f, { 200, 200, 200, 255 });
+	}
+
+	// ---- Frame rate overlay ------------------------------------------------------------------
+
+	void DrawFps()
+	{
+		static auto since = std::chrono::steady_clock::now();
+		static uint64_t swaps = ips3_gpu_swap_count();
+		static double fps = 0;
+		const auto now = std::chrono::steady_clock::now();
+		const double seconds = std::chrono::duration<double>(now - since).count();
+		if (seconds >= 1.0)
+		{
+			const uint64_t current = ips3_gpu_swap_count();
+			fps = double(current - swaps) / seconds;
+			swaps = current;
+			since = now;
+		}
+		float w, h;
+		WindowSize(w, h);
+		const std::string text = fmt::format("{:.0f} FPS", fps);
+		const float height = h * 0.03f;
+		FillRect(w / 2 - height * 3.5f, h * 0.006f, height * 7.0f, height * 1.6f, { 0, 0, 0, 150 });
+		DrawText(text.c_str(), w / 2, h * 0.006f + height * 0.8f, height, { 255, 255, 120, 255 });
+	}
+
+	// ---- Leaving the screen ------------------------------------------------------------------
+	// iOS ends an app that uses the GPU in the background: the GPU's command thread parks before
+	// the app leaves the screen and resumes when it returns.
+
+	int SDLCALL OnAppEvent(void*, SDL_Event* event)
+	{
+		if (event->type == SDL_APP_WILLENTERBACKGROUND)
+		{
+			fmt::println(stderr, "[host] leaving the screen: pausing the GPU");
+			g_background = true;
+			ips3_gpu_set_paused(true);
+		}
+		else if (event->type == SDL_APP_DIDENTERFOREGROUND)
+		{
+			fmt::println(stderr, "[host] back on screen: resuming the GPU");
+			ips3_gpu_set_paused(false);
+			g_background = false;
+		}
+		return 1;
 	}
 
 	// ---- Frame display -----------------------------------------------------------------------
@@ -438,6 +711,7 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 	}
 	fmt::println(stderr, "[host] window renderer: {}", [] { SDL_RendererInfo info; SDL_GetRendererInfo(g_renderer, &info); return info.name; }());
 	g_circle = MakeCircle();
+	SDL_AddEventWatch(OnAppEvent, nullptr);
 
 	std::filesystem::path pending = image;
 	bool started = false;
@@ -446,6 +720,7 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 	bool picking = false;
 	g_windowThread = SDL_ThreadID();
 	auto startedAt = std::chrono::steady_clock::now();
+	bool menuOpen = host::MenuEnabled();
 
 #if IPS3_MOBILE
 	if (pending.empty())
@@ -457,6 +732,35 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 		SDL_Event event;
 		while (SDL_PollEvent(&event))
 		{
+			if (menuOpen && event.type != SDL_QUIT)
+			{
+				switch (MenuEvent(event))
+				{
+				case MenuAction::Start:
+					menuOpen = false;
+					fmt::println(stderr, "[host] starting from the menu");
+					break;
+				case MenuAction::ChooseDisc:
+#if IPS3_MOBILE
+					if (!picking)
+					{
+						mobile::ForgetGameImage();
+						pending.clear();
+						picking = true;
+						mobile::PickGameImage(g_window, [&](const std::filesystem::path& picked)
+						{
+							pending = picked;
+							picking = false;
+						});
+					}
+#endif
+					break;
+				default:
+					break;
+				}
+				ProcessControllerEvent(event);
+				continue;
+			}
 			switch (event.type)
 			{
 			case SDL_QUIT:
@@ -475,7 +779,7 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 
 		// The game starts on a worker thread, so a slow or stuck start (the GPU, the disc) never
 		// freezes the window.
-		if (!started && !starting && !pending.empty())
+		if (!started && !starting && !menuOpen && !pending.empty())
 		{
 			const auto chosen = pending;
 			pending.clear();
@@ -494,13 +798,16 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 				g_grabbing = true;
 				std::thread(FrameThread).detach();
 			}
-#if IPS3_MOBILE
 			else
+			{
+#if IPS3_MOBILE
 				mobile::ForgetGameImage(); // a wrong pick must not stick: the picker shows again
 #endif
+				menuOpen = host::MenuEnabled(); // back to the menu, where there is one
+			}
 		}
 #if IPS3_MOBILE
-		else if (!started && !starting && !picking)
+		else if (!started && !starting && !picking && !menuOpen)
 		{
 			picking = true;
 			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Bayonetta", mobile::PickPrompt(), g_window);
@@ -546,10 +853,27 @@ int host::RunWindow(const std::filesystem::path& image, const std::function<bool
 		ReadTouch(buttons, triggers, sticks);
 		UpdatePad(buttons, triggers, sticks);
 
+		// Nothing may draw while the app is off the screen.
+		if (g_background)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			continue;
+		}
+
 		SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
 		SDL_RenderClear(g_renderer);
-		DrawFrame();
-		DrawTouchControls();
+		if (menuOpen)
+		{
+			std::string disc = pending.empty() ? "NO DISC IMAGE YET: CHOSEN AT START" : "DISC: " + pending.filename().string();
+			DrawMenu(disc);
+		}
+		else
+		{
+			DrawFrame();
+			DrawTouchControls();
+			if (host::CurrentSettings().showFps && started)
+				DrawFps();
+		}
 
 		// IPS3_WINDOW_SHOT=<file.bmp>[:seconds]: saves what the window shows once (testing).
 		static const char* shot = getenv("IPS3_WINDOW_SHOT");
