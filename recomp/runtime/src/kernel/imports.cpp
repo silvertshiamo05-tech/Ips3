@@ -68,7 +68,8 @@ struct Event final : KernelObject, HostObject<XKEVENT>
         }
         else
         {
-            assert(false && "Unhandled timeout value.");
+            KernelObject* self = this;
+            return WaitForKernelObjects(&self, 1, false, timeout);
         }
 
         return STATUS_SUCCESS;
@@ -83,6 +84,7 @@ struct Event final : KernelObject, HostObject<XKEVENT>
         else
             signaled.notify_one();
 
+        NotifyKernelWaiters();
         return TRUE;
     }
 
@@ -144,8 +146,8 @@ struct Semaphore final : KernelObject, HostObject<XKSEMAPHORE>
         }
         else
         {
-            assert(false && "Unhandled timeout value.");
-            return STATUS_TIMEOUT;
+            KernelObject* self = this;
+            return WaitForKernelObjects(&self, 1, false, timeout);
         }
     }
 
@@ -158,6 +160,7 @@ struct Semaphore final : KernelObject, HostObject<XKSEMAPHORE>
 
         count += releaseCount;
         count.notify_all();
+        NotifyKernelWaiters();
     }
 };
 
@@ -171,9 +174,26 @@ inline void CloseKernelObject(XDISPATCHER_HEADER& header)
     DestroyKernelObject(header.WaitListHead.Blink);
 }
 
+// Ips3: guest timeouts are 100 ns units, negative for relative and positive for an absolute
+// FILETIME; no pointer means wait forever.
 uint32_t GuestTimeoutToMilliseconds(be<int64_t>* timeout)
 {
-    return timeout ? (*timeout * -1) / 10000 : INFINITE;
+    if (!timeout)
+        return INFINITE;
+
+    int64_t value = *timeout;
+    if (value > 0)
+    {
+        constexpr int64_t FILETIME_EPOCH_DIFFERENCE = 116444736000000000LL;
+        const int64_t now = std::chrono::duration_cast<std::chrono::duration<int64_t, std::ratio<1, 10000000>>>(
+            std::chrono::system_clock::now().time_since_epoch()).count() + FILETIME_EPOCH_DIFFERENCE;
+        value = now - value; // as a relative (negative) timeout
+    }
+
+    const int64_t ms = (-value + 9999) / 10000; // round up so short waits do not become polls
+    if (value >= 0 || ms <= 0)
+        return 0;
+    return ms >= INFINITE ? INFINITE - 1 : uint32_t(ms);
 }
 
 
@@ -374,7 +394,6 @@ uint32_t FscSetCacheElementCount()
 uint32_t NtWaitForSingleObjectEx(uint32_t Handle, uint32_t WaitMode, uint32_t Alertable, be<int64_t>* Timeout)
 {
     uint32_t timeout = GuestTimeoutToMilliseconds(Timeout);
-    assert(timeout == 0 || timeout == INFINITE);
 
     if (IsKernelObject(Handle))
     {
@@ -714,8 +733,10 @@ uint32_t KiApcNormalRoutineNop()
 
 uint32_t MmGetPhysicalAddress(uint32_t address)
 {
-    // Ips3: physical memory is the 512 MiB at 0xA0000000 (see Heap::Init); GPU addresses are
-    // its low 29 bits.
+    // Ips3: physical memory is the 512 MiB seen at 0xA0000000 and 0xC0000000 (low 29 bits) and
+    // at 0xE0000000 shifted by 4 KiB (see kernel/memory.cpp).
+    if (address >= 0xE0000000)
+        return (address & 0x1FFFFFFF) + 0x1000;
     return address & 0x1FFFFFFF;
 }
 
@@ -812,25 +833,20 @@ bool KeResetEvent(XKEVENT* pEvent)
 uint32_t KeWaitForSingleObject(XDISPATCHER_HEADER* Object, uint32_t WaitReason, uint32_t WaitMode, bool Alertable, be<int64_t>* Timeout)
 {
     const uint32_t timeout = GuestTimeoutToMilliseconds(Timeout);
-    assert(timeout == INFINITE);
 
     switch (Object->Type)
     {
         case 0:
         case 1:
-            QueryKernelObject<Event>(*Object)->Wait(timeout);
-            break;
+            return QueryKernelObject<Event>(*Object)->Wait(timeout);
 
         case 5:
-            QueryKernelObject<Semaphore>(*Object)->Wait(timeout);
-            break;
+            return QueryKernelObject<Semaphore>(*Object)->Wait(timeout);
 
         default:
-            assert(false && "Unrecognized kernel object type.");
+            LOGF_UTILITY("unsupported object type {}", uint32_t(Object->Type));
             return STATUS_TIMEOUT;
     }
-
-    return STATUS_SUCCESS;
 }
 
 static std::vector<size_t> g_tlsFreeIndices;
@@ -1150,10 +1166,22 @@ uint32_t NtReleaseSemaphore(Semaphore* Handle, uint32_t ReleaseCount, int32_t* P
     return STATUS_SUCCESS;
 }
 
-uint32_t NtWaitForMultipleObjectsEx()
+// NTSTATUS NtWaitForMultipleObjectsEx(uint32_t count, HANDLE* handles, uint32_t waitType,
+//     uint32_t waitMode, uint32_t alertable, LARGE_INTEGER* timeout)
+uint32_t NtWaitForMultipleObjectsEx(uint32_t Count, be<uint32_t>* Handles, uint32_t WaitType, uint32_t WaitMode, uint32_t Alertable, be<int64_t>* Timeout)
 {
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
+    thread_local std::vector<KernelObject*> s_objects;
+    s_objects.resize(Count);
+
+    for (size_t i = 0; i < Count; i++)
+    {
+        const uint32_t handle = Handles[i];
+        if (!IsKernelObject(handle) || handle == CURRENT_THREAD_HANDLE)
+            return 0xC0000008; // STATUS_INVALID_HANDLE
+        s_objects[i] = GetKernelObject(handle);
+    }
+
+    return WaitForKernelObjects(s_objects.data(), Count, WaitType == 0, GuestTimeoutToMilliseconds(Timeout));
 }
 
 
@@ -1275,41 +1303,29 @@ uint32_t NetDll_XNetGetTitleXnAddr()
 
 uint32_t KeWaitForMultipleObjects(uint32_t Count, xpointer<XDISPATCHER_HEADER>* Objects, uint32_t WaitType, uint32_t WaitReason, uint32_t WaitMode, uint32_t Alertable, be<int64_t>* Timeout)
 {
-    // FIXME: This function is only accounting for events.
+    thread_local std::vector<KernelObject*> s_objects;
+    s_objects.resize(Count);
 
-    const uint64_t timeout = GuestTimeoutToMilliseconds(Timeout);
-    assert(timeout == INFINITE);
-
-    if (WaitType == 0) // Wait all
+    for (size_t i = 0; i < Count; i++)
     {
-        for (size_t i = 0; i < Count; i++)
-            QueryKernelObject<Event>(*Objects[i])->Wait(timeout);
-    }
-    else
-    {
-        thread_local std::vector<Event*> s_events;
-        s_events.resize(Count);
-
-        for (size_t i = 0; i < Count; i++)
-            s_events[i] = QueryKernelObject<Event>(*Objects[i]);
-
-        while (true)
+        XDISPATCHER_HEADER* header = Objects[i].get();
+        switch (header->Type)
         {
-            uint32_t generation = g_keSetEventGeneration.load();
-
-            for (size_t i = 0; i < Count; i++)
-            {
-                if (s_events[i]->Wait(0) == STATUS_SUCCESS)
-                {
-                    return STATUS_WAIT_0 + i;
-                }
-            }
-
-            g_keSetEventGeneration.wait(generation);
+            case 0:
+            case 1:
+                s_objects[i] = QueryKernelObject<Event>(*header);
+                break;
+            case 5:
+                s_objects[i] = QueryKernelObject<Semaphore>(*header);
+                break;
+            default:
+                LOGF_UTILITY("unsupported object type {}", uint32_t(header->Type));
+                return STATUS_TIMEOUT;
         }
     }
 
-    return STATUS_SUCCESS;
+    // WaitType 0 = all, 1 = any.
+    return WaitForKernelObjects(s_objects.data(), Count, WaitType == 0, GuestTimeoutToMilliseconds(Timeout));
 }
 
 uint32_t KeRaiseIrqlToDpcLevel()
@@ -1326,11 +1342,6 @@ uint32_t KeReleaseSemaphore(XKSEMAPHORE* semaphore, uint32_t increment, uint32_t
     return STATUS_SUCCESS;
 }
 
-uint32_t XAudioGetVoiceCategoryVolume()
-{
-    LOG_UTILITY("!!! STUB !!!");
-    return 0;
-}
 
 uint32_t XAudioGetVoiceCategoryVolumeChangeMask(uint32_t Driver, be<uint32_t>* Mask)
 {
@@ -1511,7 +1522,6 @@ GUEST_FUNCTION_HOOK(__imp__KeWaitForMultipleObjects, KeWaitForMultipleObjects);
 GUEST_FUNCTION_HOOK(__imp__KeRaiseIrqlToDpcLevel, KeRaiseIrqlToDpcLevel);
 GUEST_FUNCTION_HOOK(__imp__KfLowerIrql, KfLowerIrql);
 GUEST_FUNCTION_HOOK(__imp__KeReleaseSemaphore, KeReleaseSemaphore);
-GUEST_FUNCTION_HOOK(__imp__XAudioGetVoiceCategoryVolume, XAudioGetVoiceCategoryVolume);
 GUEST_FUNCTION_HOOK(__imp__XAudioGetVoiceCategoryVolumeChangeMask, XAudioGetVoiceCategoryVolumeChangeMask);
 GUEST_FUNCTION_HOOK(__imp__KeResumeThread, KeResumeThread);
 GUEST_FUNCTION_HOOK(__imp__KeInitializeSemaphore, KeInitializeSemaphore);

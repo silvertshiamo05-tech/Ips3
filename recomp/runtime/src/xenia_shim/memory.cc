@@ -42,6 +42,37 @@ std::vector<uint64_t> g_watched;  // one bit per host page of physical memory
 struct sigaction g_previous_segv;
 struct sigaction g_previous_bus;
 
+// Physical memory is also visible at 0xC0000000, 0xE0000000 (shifted: guest 0xE0000000 is
+// physical 0x1000) and below the GPU registers at 0x7F000000 (runtime kernel/memory.cpp).
+// Watches protect the page in every window, and a fault in any of them counts.
+bool GuestToPhysical(uint32_t guest, uint32_t* physical) {
+  if (guest >= 0xE0000000) {
+    *physical = guest - 0xE0000000 + 0x1000;
+    return *physical < kPhysicalSize;
+  }
+  if (guest >= 0xA0000000) {
+    *physical = guest & 0x1FFFFFFF;
+    return true;
+  }
+  if (guest >= 0x7F000000 && guest < 0x7FC80000) {
+    *physical = guest - 0x7F000000;
+    return true;
+  }
+  return false;
+}
+
+void ProtectPhysical(uint32_t physical, size_t size, int protection) {
+  uint8_t* base = ips3_guest_membase;
+  mprotect(base + 0xA0000000 + physical, size, protection);
+  mprotect(base + 0xC0000000 + physical, size, protection);
+  if (physical >= 0x1000) {
+    mprotect(base + 0xE0000000 + physical - 0x1000, size, protection);
+  }
+  if (physical < 0xC80000) {
+    mprotect(base + 0x7F000000 + physical, std::min<size_t>(size, 0xC80000 - physical), protection);
+  }
+}
+
 bool PageWatched(uint32_t page) {
   return (g_watched[page >> 6] >> (page & 63)) & 1;
 }
@@ -86,7 +117,8 @@ uint32_t Memory::HostToGuestVirtual(const void* host_address) const {
 }
 
 uint32_t Memory::GetPhysicalAddress(uint32_t address) const {
-  return address >= kPhysicalBase ? (address & 0x1FFFFFFF) : UINT32_MAX;
+  uint32_t physical;
+  return GuestToPhysical(address, &physical) ? physical : UINT32_MAX;
 }
 
 bool Memory::AddVirtualMappedRange(uint32_t virtual_address, uint32_t mask, uint32_t size,
@@ -136,8 +168,8 @@ void Memory::EnablePhysicalMemoryAccessCallbacks(uint32_t physical_address, uint
   uint32_t run_start = UINT32_MAX;
   auto flush = [&](uint32_t end) {
     if (run_start != UINT32_MAX) {
-      mprotect(physical_membase_ + (size_t(run_start) << g_page_shift),
-               size_t(end - run_start) << g_page_shift, PROT_READ);
+      ProtectPhysical(run_start << g_page_shift, size_t(end - run_start) << g_page_shift,
+                      PROT_READ);
       run_start = UINT32_MAX;
     }
   };
@@ -160,11 +192,8 @@ bool Memory::TriggerPhysicalMemoryCallbacks(global_unique_lock_type global_lock_
                                             uint32_t virtual_address, uint32_t length,
                                             bool is_write, bool unwatch_exact_range,
                                             bool unprotect) {
-  if (virtual_address < kPhysicalBase || length == 0) {
-    return false;
-  }
-  const uint32_t physical = virtual_address - kPhysicalBase;
-  if (physical >= kPhysicalSize) {
+  uint32_t physical;
+  if (length == 0 || !GuestToPhysical(virtual_address, &physical)) {
     return false;
   }
   length = std::min(length, kPhysicalSize - physical);
@@ -212,8 +241,8 @@ bool Memory::TriggerPhysicalMemoryCallbacks(global_unique_lock_type global_lock_
   auto flush = [&](uint32_t end) {
     if (run_start != UINT32_MAX) {
       if (unprotect) {
-        mprotect(physical_membase_ + (size_t(run_start) << g_page_shift),
-                 size_t(end - run_start) << g_page_shift, PROT_READ | PROT_WRITE);
+        ProtectPhysical(run_start << g_page_shift, size_t(end - run_start) << g_page_shift,
+                        PROT_READ | PROT_WRITE);
       }
       run_start = UINT32_MAX;
     }
@@ -256,8 +285,8 @@ namespace {
 
 void FaultHandler(int signal, siginfo_t* info, void* context) {
   auto* address = static_cast<uint8_t*>(info->si_addr);
-  if (g_memory_instance && address >= ips3_guest_membase + kPhysicalBase &&
-      address < ips3_guest_membase + kPhysicalBase + kPhysicalSize) {
+  if (g_memory_instance && address >= ips3_guest_membase &&
+      address < ips3_guest_membase + 0x100000000ull) {
     const uint32_t guest = uint32_t(address - ips3_guest_membase);
     auto lock = xe::global_critical_region::AcquireDirect();
     if (g_memory_instance->TriggerPhysicalMemoryCallbacks(std::move(lock), guest, 1, true,

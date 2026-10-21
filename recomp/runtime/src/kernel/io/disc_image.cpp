@@ -186,6 +186,25 @@ std::shared_ptr<DiscImage::Disc> DiscImage::Lookup(const std::filesystem::path& 
 			relative /= *pathIt;
 
 		*entry = Find(disc->root, relative);
+
+		// Debugging aid: IPS3_HIDE=path1;path2 makes those disc paths (case-insensitive,
+		// '/'-separated, relative to the disc root) appear missing.
+		if (*entry != nullptr)
+		{
+			if (const char* hidden = getenv("IPS3_HIDE"))
+			{
+				const std::string rel = (const char*)relative.u8string().c_str();
+				std::string_view list = hidden;
+				while (!list.empty())
+				{
+					const size_t end = std::min(list.find(';'), list.size());
+					const std::string_view item = list.substr(0, end);
+					if (EqualsNoCase(item, rel))
+						*entry = nullptr;
+					list.remove_prefix(std::min(end + 1, list.size()));
+				}
+			}
+		}
 		return disc;
 	}
 

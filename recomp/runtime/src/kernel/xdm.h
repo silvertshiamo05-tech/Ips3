@@ -110,6 +110,13 @@ inline T* GetKernelObject(uint32_t handle)
 
 uint32_t GetKernelHandle(KernelObject* obj);
 
+// Ips3: generic waits. Anything that can satisfy a wait (event set, semaphore release,
+// thread exit) calls NotifyKernelWaiters; WaitForKernelObjects polls the objects with
+// Wait(0) and sleeps between rounds until one of those notifications or the timeout.
+void NotifyKernelWaiters();
+// Returns STATUS_WAIT_0 + index (wait any), STATUS_SUCCESS (wait all) or STATUS_TIMEOUT.
+uint32_t WaitForKernelObjects(KernelObject* const* objects, size_t count, bool waitAll, uint32_t timeoutMs);
+
 void DestroyKernelObject(KernelObject* obj);
 void DestroyKernelObject(uint32_t handle);
 

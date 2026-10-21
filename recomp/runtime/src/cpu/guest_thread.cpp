@@ -73,6 +73,8 @@ static void GuestThreadFunc(GuestThreadHandle* hThread)
 #endif
     hThread->suspended.wait(true);
     GuestThread::Start(hThread->params);
+    hThread->exited = true;
+    NotifyKernelWaiters();
 #ifdef USE_PTHREAD
     return nullptr;
 #endif
@@ -127,7 +129,15 @@ uint32_t GuestThreadHandle::GetThreadId() const
 
 uint32_t GuestThreadHandle::Wait(uint32_t timeout)
 {
-    assert(timeout == INFINITE);
+    if (timeout != INFINITE)
+    {
+        if (exited)
+            return STATUS_SUCCESS;
+        if (timeout == 0)
+            return STATUS_TIMEOUT;
+        KernelObject* self = this;
+        return WaitForKernelObjects(&self, 1, false, timeout);
+    }
 
 #ifdef USE_PTHREAD
     pthread_join(thread, nullptr);

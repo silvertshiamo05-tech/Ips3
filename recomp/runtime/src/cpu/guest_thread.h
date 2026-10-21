@@ -40,6 +40,7 @@ struct GuestThreadHandle : KernelObject
 {
     GuestThreadParams params;
     std::atomic<bool> suspended;
+    std::atomic<bool> exited{ false };
 #ifdef USE_PTHREAD
     pthread_t thread;
 #else

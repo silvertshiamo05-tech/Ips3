@@ -443,6 +443,8 @@ uint32_t NtCreateFile(be<uint32_t>* handle, uint32_t desiredAccess, XOBJECT_ATTR
 	}
 
 	const uint32_t guestHandle = GetKernelHandle(file);
+	if (getenv("IPS3_TRACE_FILES"))
+		fmt::println(stderr, "[file] open {:08X} {} access {:X} disposition {} options {:X}", guestHandle, guestPath, desiredAccess, createDisposition, createOptions);
 	{
 		std::lock_guard lock(g_fileHandlesMutex);
 		g_fileHandles.insert(guestHandle);
@@ -487,6 +489,8 @@ uint32_t NtReadFile(uint32_t handle, uint32_t event, uint32_t apcRoutine, uint32
 	file->position = offset + total;
 
 	const uint32_t status = (total == 0 && length != 0) ? STATUS_END_OF_FILE : STATUS_SUCCESS;
+	if (getenv("IPS3_TRACE_FILES"))
+		fmt::println(stderr, "[file] read {:08X} @{:X} +{:X} -> {:X} event {:08X} apc {:08X} status {:08X}", handle, offset, length, total, event, apcRoutine, status);
 	Complete(ioStatus, status, uint32_t(total), event);
 	return status;
 }

@@ -1,5 +1,5 @@
 diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
-index fa91527..174ab16 100644
+index fa91527..2bd65c8 100644
 --- a/XenonRecomp/recompiler.cpp
 +++ b/XenonRecomp/recompiler.cpp
 @@ -242,7 +242,19 @@ void Recompiler::Analyse()
@@ -275,3 +275,26 @@ index fa91527..174ab16 100644
  
      case PPC_INST_BEQ:
          printConditionalBranch(false, "eq");
+@@ -1260,7 +1472,7 @@ bool Recompiler::Recompile(
+         break;
+ 
+     case PPC_INST_MFTB:
+-        println("\t{}.u64 = __rdtsc();", r(insn.operands[0]));
++        println("\t{}.u64 = PPC_QUERY_TIMEBASE();", r(insn.operands[0]));
+         break;
+ 
+     case PPC_INST_MR:
+diff --git a/XenonUtils/ppc_context.h b/XenonUtils/ppc_context.h
+index 31a86cd..3cc587b 100644
+--- a/XenonUtils/ppc_context.h
++++ b/XenonUtils/ppc_context.h
+@@ -700,4 +700,9 @@ inline uint64_t __rdtsc()
+ #   error "Missing implementation for __rdtsc()"
+ #endif
+ 
++// mftb. Hosts can supply a clock running at the console's time base rate (49.875 MHz).
++#ifndef PPC_QUERY_TIMEBASE
++#define PPC_QUERY_TIMEBASE() __rdtsc()
++#endif
++
+ #endif
