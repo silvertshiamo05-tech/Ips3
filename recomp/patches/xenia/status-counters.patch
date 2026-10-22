@@ -1,8 +1,8 @@
 diff --git a/src/xenia/gpu/command_processor.cc b/src/xenia/gpu/command_processor.cc
-index 16b00f6e8..ce69e4d9f 100644
+index 16b00f6e8..0927f4936 100644
 --- a/src/xenia/gpu/command_processor.cc
 +++ b/src/xenia/gpu/command_processor.cc
-@@ -9,6 +9,11 @@
+@@ -9,6 +9,14 @@
  
  #include "xenia/gpu/command_processor.h"
  
@@ -10,11 +10,14 @@ index 16b00f6e8..ce69e4d9f 100644
 +#include <pthread.h>
 +#include <sys/qos.h>
 +#endif
++#if XE_PLATFORM_ANDROID
++extern "C" void ips3_pin_to_fast_cores();
++#endif
 +
  #include <algorithm>
  
  #include "third_party/fmt/include/fmt/format.h"
-@@ -360,6 +365,14 @@ void CommandProcessor::SetDesiredSwapPostEffect(
+@@ -360,6 +368,18 @@ void CommandProcessor::SetDesiredSwapPostEffect(
  }
  
  void CommandProcessor::WorkerThreadMain() {
@@ -26,10 +29,14 @@ index 16b00f6e8..ce69e4d9f 100644
 +  }
 +  pthread_setname_np("GPU Commands");
 +#endif
++#if XE_PLATFORM_ANDROID
++  // Ips3: on the fast cores with the game's main thread (see ips3_pin_to_fast_cores).
++  ips3_pin_to_fast_cores();
++#endif
    if (!SetupContext()) {
      xe::FatalError("Unable to setup command processor internal state");
      return;
-@@ -407,7 +420,10 @@ void CommandProcessor::WorkerThreadMain() {
+@@ -407,7 +427,10 @@ void CommandProcessor::WorkerThreadMain() {
      assert_true(read_ptr_index_ != write_ptr_index);
  
      // Execute. Note that we handle wraparound transparently.

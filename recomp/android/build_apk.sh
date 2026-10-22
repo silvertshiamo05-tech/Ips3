@@ -4,6 +4,10 @@
 #
 #   ANDROID_NDK=... ANDROID_SDK=... build_apk.sh <out.apk> [PPC_DIR]
 #
+# IPS3_ANDROID_PACKAGE and IPS3_ANDROID_LABEL give the app another package name and name, so a
+# second copy installs next to the first: a package name ending in .menu makes the menu version
+# (settings before the game).
+#
 # Without PPC_DIR it builds against the recompiled game in bayonetta/private/ppc. The APK then
 # contains code generated from the game: keep it to yourself, never publish it.
 set -euo pipefail
@@ -35,7 +39,11 @@ javac -nowarn --release 11 -classpath "$JAR" -d "$WORK/apk/classes" \
 jar cf "$WORK/apk/classes.jar" -C "$WORK/apk/classes" .
 "$TOOLS/d8" --min-api 30 --lib "$JAR" --output "$WORK/apk/root" "$WORK/apk/classes.jar"
 
-"$TOOLS/aapt2" link -o "$WORK/apk/base.apk" --manifest "$HERE/AndroidManifest.xml" -I "$JAR" \
+MANIFEST="$WORK/apk/AndroidManifest.xml"
+sed -e "s/package=\"com.ips3.bayonetta\"/package=\"${IPS3_ANDROID_PACKAGE:-com.ips3.bayonetta}\"/" \
+	-e "s/android:label=\"Bayonetta\"/android:label=\"${IPS3_ANDROID_LABEL:-Bayonetta}\"/g" \
+	"$HERE/AndroidManifest.xml" > "$MANIFEST"
+"$TOOLS/aapt2" link -o "$WORK/apk/base.apk" --manifest "$MANIFEST" -I "$JAR" \
 	--min-sdk-version 30 --target-sdk-version $API
 (cd "$WORK/apk/root" && zip -qr "$WORK/apk/base.apk" classes.dex lib)
 "$TOOLS/zipalign" -f -P 16 4 "$WORK/apk/base.apk" "$WORK/apk/aligned.apk"

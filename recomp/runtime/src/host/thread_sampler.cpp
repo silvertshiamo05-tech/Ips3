@@ -24,7 +24,11 @@ extern "C" bool ips3_thread_name(pthread_t thread, char* name, size_t size);
 #else
 #include <csignal>
 #include <dirent.h>
+#ifdef __ANDROID__
+#include <unwind.h>
+#else
 #include <execinfo.h>
+#endif
 #include <fstream>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -165,6 +169,32 @@ namespace
 	// Linux (for testing): a signal makes the thread record its own stack.
 	std::atomic<bool> g_sampleReady{ false };
 	Stack g_signalStack;
+
+#ifdef __ANDROID__
+	// Android's C library gains backtrace() only in API 33: walk the stack with the unwinder.
+	struct UnwindState
+	{
+		void** frames;
+		int max, count;
+	};
+
+	_Unwind_Reason_Code UnwindFrame(_Unwind_Context* context, void* arg)
+	{
+		auto* state = static_cast<UnwindState*>(arg);
+		if (state->count >= state->max)
+			return _URC_END_OF_STACK;
+		if (const uintptr_t pc = _Unwind_GetIP(context))
+			state->frames[state->count++] = reinterpret_cast<void*>(pc);
+		return _URC_NO_REASON;
+	}
+
+	int backtrace(void** frames, int max)
+	{
+		UnwindState state{ frames, max, 0 };
+		_Unwind_Backtrace(UnwindFrame, &state);
+		return state.count;
+	}
+#endif
 
 	void OnSampleSignal(int)
 	{

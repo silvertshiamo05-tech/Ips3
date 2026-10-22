@@ -10,6 +10,7 @@
 #include <jni.h>
 
 #include <cstdio>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -106,7 +107,12 @@ std::filesystem::path mobile::FindGameImage()
 
 bool mobile::MenuApp()
 {
-	return false; // the Android build has no menu variant (yet)
+	// The menu variant is the same app under another package name (build_apk.sh with
+	// IPS3_ANDROID_PACKAGE=com.ips3.bayonetta.menu); an app's process is named after its package.
+	std::ifstream cmdline("/proc/self/cmdline");
+	std::string name;
+	std::getline(cmdline, name, '\0');
+	return name.ends_with(".menu");
 }
 
 void mobile::ForgetGameImage()

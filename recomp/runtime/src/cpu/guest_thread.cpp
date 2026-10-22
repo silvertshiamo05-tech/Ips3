@@ -150,6 +150,42 @@ uint32_t GuestThreadHandle::Wait(uint32_t timeout)
 #ifdef __APPLE__
 #include <sys/qos.h>
 #endif
+#ifdef __ANDROID__
+#include <fstream>
+#include <sched.h>
+#include <unistd.h>
+#endif
+
+// Ips3: on Android phones (big.LITTLE: e.g. 2 fast and 6 slow cores), keeps the calling thread
+// on the fastest cores -- the ones with the highest maximum clock. IPS3_FAST_CORES=0 leaves the
+// scheduler free. Also called by Xenia's GPU command thread. A no-op elsewhere.
+extern "C" void ips3_pin_to_fast_cores()
+{
+#ifdef __ANDROID__
+    const char* fast = getenv("IPS3_FAST_CORES");
+    if (fast && fast[0] == '0')
+        return;
+    static const cpu_set_t fastCores = []
+    {
+        const long count = sysconf(_SC_NPROCESSORS_CONF);
+        std::vector<long> maxFreq(size_t(std::max(count, 0L)), 0);
+        long best = 0;
+        for (long i = 0; i < count; i++)
+        {
+            std::ifstream file("/sys/devices/system/cpu/cpu" + std::to_string(i) + "/cpufreq/cpuinfo_max_freq");
+            file >> maxFreq[i];
+            best = std::max(best, maxFreq[i]);
+        }
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        for (long i = 0; i < count; i++)
+            if (best == 0 || maxFreq[i] == best)
+                CPU_SET(i, &set);
+        return set;
+    }();
+    sched_setaffinity(0, sizeof(fastCores), &fastCores);
+#endif
+}
 
 // Ips3: names each host thread that runs guest code ("guest 0" is the game's main thread) for
 // the per-thread status lines. On Apple's chips, with few fast cores and more slow ones that the
@@ -169,6 +205,8 @@ static void SetupGuestHostThread()
 #else
     pthread_setname_np(pthread_self(), name);
 #endif
+    if (index == 0)
+        ips3_pin_to_fast_cores();
 }
 
 uint32_t GuestThread::Start(const GuestThreadParams& params)

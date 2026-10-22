@@ -20,7 +20,7 @@
         android:largeHeap="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
         android:hardwareAccelerated="true">
-        <activity android:name="BayonettaActivity"
+        <activity android:name="com.ips3.bayonetta.BayonettaActivity"
             android:label="Bayonetta"
             android:alwaysRetainTaskState="true"
             android:launchMode="singleInstance"
