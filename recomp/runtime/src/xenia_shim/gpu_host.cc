@@ -20,6 +20,7 @@
 #include <algorithm>
 
 #include "xenia/ui/gpu_completion_timeline.h"
+#include "xenia/gpu/ips3_gpu_counters.h"
 #include "xenia/base/byte_order.h"
 #include "xenia/base/cvar.h"
 #include "xenia/base/logging.h"
@@ -266,6 +267,25 @@ void ips3_gpu_write_swap(uint32_t* buffer, const uint32_t* fetch, uint32_t width
 }
 
 uint64_t ips3_gpu_swap_count() { return g_gpu.swaps; }
+
+std::string ips3_gpu_work_report(uint64_t frames) {
+  static uint64_t last[10] = {};
+  const Ips3GpuCounters& c = ips3_gpu_counters;
+  const uint64_t now[10] = {c.draws, c.render_passes, c.msaa_render_passes, c.render_pass_pixels,
+                            c.transfers, c.resolves, c.dispatches, c.copies, c.barriers,
+                            c.submissions};
+  double d[10];
+  const double per = double(frames ? frames : 1);
+  for (int i = 0; i < 10; ++i) {
+    d[i] = double(now[i] - last[i]) / per;
+    last[i] = now[i];
+  }
+  return fmt::format(
+      "per frame: {:.0f} draws, {:.0f} render passes ({:.0f} with MSAA, {:.1f} Mpixels), "
+      "{:.0f} render target transfers, {:.0f} resolves, {:.0f} dispatches, {:.0f} copies, "
+      "{:.0f} barriers, {:.1f} submissions",
+      d[0], d[1], d[2], d[3] / 1e6, d[4], d[5], d[6], d[7], d[8], d[9]);
+}
 
 void ips3_gpu_wait_stats(uint64_t* wait_ns, uint64_t* waits) {
   *wait_ns = ips3_gpu_wait_ns.load();

@@ -18,6 +18,7 @@ namespace host
 		bool statusLog = true;      // the [status] lines in the log
 		int renderPath = 0;         // 0: host framebuffers (Xenia's default), 1: pixel shader interlock
 		bool metalArgumentBuffers = true; // MoltenVK binds resources through Metal argument buffers
+		bool smallRenderAreas = true; // render passes cover only the rows drawn (much less GPU memory traffic)
 	};
 
 	// The settings in effect (loaded once, the first time).

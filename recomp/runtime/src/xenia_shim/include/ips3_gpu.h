@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <string>
 #include <unistd.h>
 #include <vector>
 
@@ -36,6 +37,9 @@ void ips3_gpu_write_swap(uint32_t* buffer, const uint32_t* fetch, uint32_t width
 uint64_t ips3_gpu_swap_count();
 // Total time Xenia waited for the GPU to finish submitted work, and how many waits.
 void ips3_gpu_wait_stats(uint64_t* wait_ns, uint64_t* waits);
+// The GPU work recorded per guest frame since the last call (draws, render passes, render target
+// transfers, resolves, ...), as one line of text.
+std::string ips3_gpu_work_report(uint64_t frames);
 // The command ring: where the game has written to, and where the GPU has read to.
 void ips3_gpu_ring_state(uint32_t* write_pointer, uint32_t* read_pointer);
 // Xenia's command processor: where it has read the ring to, PM4 packets executed, the last

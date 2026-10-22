@@ -1,0 +1,310 @@
+diff --git a/src/xenia/gpu/ips3_gpu_counters.h b/src/xenia/gpu/ips3_gpu_counters.h
+new file mode 100644
+index 000000000..e3ed2c430
+--- /dev/null
++++ b/src/xenia/gpu/ips3_gpu_counters.h
+@@ -0,0 +1,24 @@
++// Ips3: counts of the GPU work Xenia records, for the status lines (what each guest frame costs
++// the host GPU).
++#ifndef XENIA_GPU_IPS3_GPU_COUNTERS_H_
++#define XENIA_GPU_IPS3_GPU_COUNTERS_H_
++
++#include <atomic>
++#include <cstdint>
++
++struct Ips3GpuCounters {
++  std::atomic<uint64_t> render_passes{0};
++  std::atomic<uint64_t> render_pass_pixels{0};
++  std::atomic<uint64_t> msaa_render_passes{0};
++  std::atomic<uint64_t> draws{0};
++  std::atomic<uint64_t> dispatches{0};
++  std::atomic<uint64_t> copies{0};
++  std::atomic<uint64_t> barriers{0};
++  std::atomic<uint64_t> transfers{0};
++  std::atomic<uint64_t> resolves{0};
++  std::atomic<uint64_t> submissions{0};
++};
++
++inline Ips3GpuCounters ips3_gpu_counters;
++
++#endif  // XENIA_GPU_IPS3_GPU_COUNTERS_H_
+diff --git a/src/xenia/gpu/render_target_cache.cc b/src/xenia/gpu/render_target_cache.cc
+index 025bfc701..7fbe8379c 100644
+--- a/src/xenia/gpu/render_target_cache.cc
++++ b/src/xenia/gpu/render_target_cache.cc
+@@ -952,6 +952,7 @@ bool RenderTargetCache::Update(bool is_rasterization_done,
+     height_used = std::min(
+         height_used, GetRenderTargetHeight(pitch_tiles_at_32bpp, msaa_samples));
+   }
++  ips3_last_height_used_ = height_used;
+ 
+   RenderTargetKey rt_keys[1 + xenos::kMaxColorRenderTargets] = {};
+   RenderTarget* rts[1 + xenos::kMaxColorRenderTargets] = {};
+diff --git a/src/xenia/gpu/render_target_cache.h b/src/xenia/gpu/render_target_cache.h
+index 32f8a5c23..e7de25ead 100644
+--- a/src/xenia/gpu/render_target_cache.h
++++ b/src/xenia/gpu/render_target_cache.h
+@@ -664,6 +664,15 @@ class RenderTargetCache {
+ 
+   DrawExtentEstimator draw_extent_estimator_;
+ 
++ public:
++  // Ips3: the rows the render targets of the last Update are used to (unscaled), so a host
++  // render pass can cover only those (on Apple GPUs a render pass loads and stores its whole
++  // render area).
++  uint32_t ips3_last_height_used() const { return ips3_last_height_used_; }
++
++ protected:
++  uint32_t ips3_last_height_used_ = UINT32_MAX;
++
+   // For host render targets.
+ 
+   struct OwnershipRange {
+diff --git a/src/xenia/gpu/vulkan/deferred_command_buffer.cc b/src/xenia/gpu/vulkan/deferred_command_buffer.cc
+index 1b0bf1bb1..79757ef5f 100644
+--- a/src/xenia/gpu/vulkan/deferred_command_buffer.cc
++++ b/src/xenia/gpu/vulkan/deferred_command_buffer.cc
+@@ -7,6 +7,7 @@
+  ******************************************************************************
+  */
+ 
++#include "xenia/gpu/ips3_gpu_counters.h"
+ #include "xenia/gpu/vulkan/deferred_command_buffer.h"
+ 
+ #include <cstring>
+@@ -95,6 +96,10 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+         }
+         dfn.vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info,
+                                  args.contents);
++        ++ips3_gpu_counters.render_passes;
++        ips3_gpu_counters.render_pass_pixels +=
++            uint64_t(render_pass_begin_info.renderArea.extent.width) *
++            render_pass_begin_info.renderArea.extent.height;
+       } break;
+ 
+       case Command::kVkBindDescriptorSets: {
+@@ -210,6 +215,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+       } break;
+ 
+       case Command::kVkCopyBuffer: {
++        ++ips3_gpu_counters.copies;
+         auto& args = *reinterpret_cast<const ArgsVkCopyBuffer*>(stream);
+         dfn.vkCmdCopyBuffer(
+             command_buffer, args.src_buffer, args.dst_buffer, args.region_count,
+@@ -225,6 +231,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+       } break;
+ 
+       case Command::kVkCopyBufferToImage: {
++        ++ips3_gpu_counters.copies;
+         auto& args = *reinterpret_cast<const ArgsVkCopyBufferToImage*>(stream);
+         dfn.vkCmdCopyBufferToImage(
+             command_buffer, args.src_buffer, args.dst_image,
+@@ -236,6 +243,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+       } break;
+ 
+       case Command::kVkBlitImage: {
++        ++ips3_gpu_counters.copies;
+         auto& args = *reinterpret_cast<const ArgsVkBlitImage*>(stream);
+         dfn.vkCmdBlitImage(
+             command_buffer, args.src_image, args.src_image_layout,
+@@ -250,15 +258,18 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+         auto& args = *reinterpret_cast<const ArgsVkDispatch*>(stream);
+         dfn.vkCmdDispatch(command_buffer, args.group_count_x,
+                           args.group_count_y, args.group_count_z);
++        ++ips3_gpu_counters.dispatches;
+       } break;
+ 
+       case Command::kVkDraw: {
+         auto& args = *reinterpret_cast<const ArgsVkDraw*>(stream);
+         dfn.vkCmdDraw(command_buffer, args.vertex_count, args.instance_count,
+                       args.first_vertex, args.first_instance);
++        ++ips3_gpu_counters.draws;
+       } break;
+ 
+       case Command::kVkDrawIndexed: {
++        ++ips3_gpu_counters.draws;
+         auto& args = *reinterpret_cast<const ArgsVkDrawIndexed*>(stream);
+         dfn.vkCmdDrawIndexed(command_buffer, args.index_count,
+                              args.instance_count, args.first_index,
+@@ -270,6 +281,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+         break;
+ 
+       case Command::kVkPipelineBarrier: {
++        ++ips3_gpu_counters.barriers;
+         auto& args = *reinterpret_cast<const ArgsVkPipelineBarrier*>(stream);
+         size_t barrier_offset_bytes = sizeof(ArgsVkPipelineBarrier);
+         const VkMemoryBarrier* memory_barriers = nullptr;
+diff --git a/src/xenia/gpu/vulkan/vulkan_command_processor.cc b/src/xenia/gpu/vulkan/vulkan_command_processor.cc
+index d9761b7f9..4caa34ba5 100644
+--- a/src/xenia/gpu/vulkan/vulkan_command_processor.cc
++++ b/src/xenia/gpu/vulkan/vulkan_command_processor.cc
+@@ -7,6 +7,7 @@
+  ******************************************************************************
+  */
+ 
++#include "xenia/gpu/ips3_gpu_counters.h"
+ #include "xenia/gpu/vulkan/vulkan_command_processor.h"
+ 
+ #include <cstdint>
+@@ -2001,8 +2002,31 @@ void VulkanCommandProcessor::SubmitBarriersAndEnterRenderTargetCacheRenderPass(
+     VkRenderPass render_pass,
+     const VulkanRenderTargetCache::Framebuffer* framebuffer) {
+   SubmitBarriers(false);
++  // Ips3: the render area covers the rows used (see ips3_pass_height_request_). Apple GPUs
++  // (through MoltenVK, which sizes the Metal render target to the render area) load and store
++  // only that much, where Xenia's render targets span all of EDRAM (1280x2048 for a 1280-wide
++  // one) though a frame uses 720 rows.
++  static const bool ips3_full_area = [] {
++    const char* full = getenv("IPS3_FULL_RENDER_AREA");
++    return full && full[0] == '1';
++  }();
++  const uint32_t ips3_request = ips3_pass_height_request_;
++  ips3_pass_height_request_ = UINT32_MAX;
++  uint32_t ips3_area_height = framebuffer->host_extent.height;
++  if (!ips3_full_area && ips3_request != UINT32_MAX) {
++    // Rounded up to 64 rows, at least what this framebuffer needed before (so a pass resumed
++    // after a query covers everything drawn so far).
++    const uint32_t needed =
++        std::max(framebuffer->ips3_area_height, (ips3_request + 63) & ~uint32_t(63));
++    if (needed) {
++      ips3_area_height = std::min(framebuffer->host_extent.height, needed);
++    }
++  }
++  framebuffer->ips3_area_height =
++      std::max(framebuffer->ips3_area_height, ips3_area_height);
+   if (current_render_pass_ == render_pass &&
+-      current_framebuffer_ == framebuffer) {
++      current_framebuffer_ == framebuffer &&
++      ips3_current_pass_height_ >= ips3_area_height) {
+     return;
+   }
+   if (current_render_pass_ != VK_NULL_HANDLE) {
+@@ -2026,10 +2050,15 @@ void VulkanCommandProcessor::SubmitBarriersAndEnterRenderTargetCacheRenderPass(
+   // TODO(Triang3l): Actual dirty width / height in the deferred command
+   // buffer.
+   render_pass_begin_info.renderArea.extent = framebuffer->host_extent;
++  render_pass_begin_info.renderArea.extent.height = ips3_area_height;
++  ips3_current_pass_height_ = ips3_area_height;
+   render_pass_begin_info.clearValueCount = 0;
+   render_pass_begin_info.pClearValues = nullptr;
+   // The sample locations for automatic depth layout transitions and for the
+   // subpass rasterization state when variableSampleLocations is false.
++  if (framebuffer->render_pass_key.msaa_samples != xenos::MsaaSamples::k1X) {
++    ++ips3_gpu_counters.msaa_render_passes;
++  }
+   deferred_command_buffer_.CmdVkBeginRenderPass(
+       &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE,
+       framebuffer->render_pass_key.depth_and_color_used
+@@ -3009,6 +3038,7 @@ bool VulkanCommandProcessor::IssueDraw(xenos::PrimitiveType prim_type,
+   // drawing.
+   uint32_t zpd_hybrid_index_before_render_pass =
+       active_segment_.hybrid ? active_query_index_ : UINT32_MAX;
++  Ips3RequestPassHeight(render_target_cache_->ips3_last_height_used());
+   SubmitBarriersAndEnterRenderTargetCacheRenderPass(
+       render_target_cache_->last_update_render_pass(),
+       render_target_cache_->last_update_framebuffer());
+@@ -3165,6 +3195,7 @@ bool VulkanCommandProcessor::IssueCopy() {
+ #if XE_GPU_FINE_GRAINED_DRAW_SCOPES
+   SCOPE_profile_cpu_f("gpu");
+ #endif  // XE_GPU_FINE_GRAINED_DRAW_SCOPES
++  ++ips3_gpu_counters.resolves;
+ 
+   if (!BeginSubmission(true)) {
+     return false;
+@@ -3851,6 +3882,7 @@ CommandProcessor::QueryOpenResult VulkanCommandProcessor::OpenQuery(
+ 
+       if (saved_framebuffer) {
+         // The pass entry won't try to open a segment while this is opening.
++        Ips3RequestPassHeight(0);
+         SubmitBarriersAndEnterRenderTargetCacheRenderPass(saved_render_pass,
+                                                           saved_framebuffer);
+         if (current_render_pass_ == VK_NULL_HANDLE) {
+@@ -3898,6 +3930,7 @@ CommandProcessor::QueryOpenResult VulkanCommandProcessor::OpenQuery(
+         EndRenderPass();
+         host_query_pool_->ClearCounter(deferred_command_buffer_,
+                                        active_query_index_);
++        Ips3RequestPassHeight(0);
+         SubmitBarriersAndEnterRenderTargetCacheRenderPass(saved_render_pass,
+                                                           saved_framebuffer);
+       } else {
+@@ -4503,6 +4536,9 @@ bool VulkanCommandProcessor::BeginSubmission(bool is_guest_command) {
+ }
+ 
+ bool VulkanCommandProcessor::EndSubmission(bool is_swap) {
++  if (submission_open_) {
++    ++ips3_gpu_counters.submissions;
++  }
+   ui::vulkan::VulkanDevice* const vulkan_device = GetVulkanDevice();
+   const ui::vulkan::VulkanDevice::Functions& dfn = vulkan_device->functions();
+   const VkDevice device = vulkan_device->device();
+diff --git a/src/xenia/gpu/vulkan/vulkan_command_processor.h b/src/xenia/gpu/vulkan/vulkan_command_processor.h
+index dc63a3ce1..a8b3b7a38 100644
+--- a/src/xenia/gpu/vulkan/vulkan_command_processor.h
++++ b/src/xenia/gpu/vulkan/vulkan_command_processor.h
+@@ -795,6 +795,20 @@ class VulkanCommandProcessor final : public CommandProcessor {
+   // framebuffer.
+   VkRenderPass current_render_pass_;
+   const VulkanRenderTargetCache::Framebuffer* current_framebuffer_;
++  // Ips3: render pass areas cover only the rows used. The caller of
++  // SubmitBarriersAndEnterRenderTargetCacheRenderPass may request a height (host pixels;
++  // UINT32_MAX, the default, means the whole framebuffer); the open pass's area height.
++  uint32_t ips3_pass_height_request_ = UINT32_MAX;
++  uint32_t ips3_current_pass_height_ = 0;
++
++ public:
++  void Ips3RequestPassHeight(uint32_t unscaled_rows) {
++    ips3_pass_height_request_ =
++        unscaled_rows == UINT32_MAX ? UINT32_MAX
++                                    : unscaled_rows * render_target_cache_->draw_resolution_scale_y();
++  }
++
++ private:
+ 
+   // Currently bound graphics pipeline, either from the pipeline cache (with
+   // potentially deferred creation - current_external_graphics_pipeline_ is
+diff --git a/src/xenia/gpu/vulkan/vulkan_render_target_cache.cc b/src/xenia/gpu/vulkan/vulkan_render_target_cache.cc
+index 581a34445..cb4f2ebb9 100644
+--- a/src/xenia/gpu/vulkan/vulkan_render_target_cache.cc
++++ b/src/xenia/gpu/vulkan/vulkan_render_target_cache.cc
+@@ -7,6 +7,7 @@
+  ******************************************************************************
+  */
+ 
++#include "xenia/gpu/ips3_gpu_counters.h"
+ #include "xenia/gpu/vulkan/vulkan_render_target_cache.h"
+ 
+ #include <cstddef>
+@@ -4719,6 +4720,11 @@ void VulkanRenderTargetCache::PerformTransfersAndResolveClears(
+     const uint64_t* render_target_resolve_clear_values,
+     const Transfer::Rectangle* resolve_clear_rectangle) {
+   assert_true(GetPath() == Path::kHostRenderTargets);
++  if (render_target_transfers) {
++    for (uint32_t i = 0; i < render_target_count; ++i) {
++      ips3_gpu_counters.transfers += render_target_transfers[i].size();
++    }
++  }
+ 
+   const ui::vulkan::VulkanDevice* const vulkan_device =
+       command_processor_.GetVulkanDevice();
+@@ -5133,6 +5139,8 @@ void VulkanRenderTargetCache::PerformTransfersAndResolveClears(
+ 
+       // Perform the transfers for the render target.
+ 
++      // Ips3: the transfers cover the rows the draw uses.
++      command_processor_.Ips3RequestPassHeight(ips3_last_height_used());
+       command_processor_.SubmitBarriersAndEnterRenderTargetCacheRenderPass(
+           transfer_render_pass, transfer_framebuffer);
+ 
+diff --git a/src/xenia/gpu/vulkan/vulkan_render_target_cache.h b/src/xenia/gpu/vulkan/vulkan_render_target_cache.h
+index 7436f8c5f..6478b0d8d 100644
+--- a/src/xenia/gpu/vulkan/vulkan_render_target_cache.h
++++ b/src/xenia/gpu/vulkan/vulkan_render_target_cache.h
+@@ -90,6 +90,8 @@ class VulkanRenderTargetCache final : public RenderTargetCache {
+     VkFramebuffer framebuffer = VK_NULL_HANDLE;
+     VkExtent2D host_extent{};
+     RenderPassKey render_pass_key;
++    // Ips3: the tallest render area a pass on this framebuffer has needed so far.
++    mutable uint32_t ips3_area_height = 0;
+     Framebuffer() = default;
+     Framebuffer(VkFramebuffer framebuffer, const VkExtent2D& host_extent,
+                 RenderPassKey render_pass_key)

@@ -209,7 +209,7 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
         std::thread([]
         {
             const auto begin = std::chrono::steady_clock::now();
-            uint64_t lastFrames = 0;
+            uint64_t lastFrames = 0, lastFramesForWork = 0;
             for (;;)
             {
                 std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -233,6 +233,8 @@ static bool StartGame(const std::filesystem::path& image, const std::filesystem:
                 lastWaitNs = waitNs;
                 lastWaits = waits;
                 fmt::print(stderr, "{}", host::ThreadSamplerReport());
+                fmt::println(stderr, "[gpu] {}", ips3_gpu_work_report(frames - lastFramesForWork));
+                lastFramesForWork = frames;
                 const bool stalled = frames == lastFrames;
                 lastFrames = frames;
                 fmt::println(stderr, "[status] {}s: kernel calls {} (last {}), frames {}, GPU ring written {} read {} "
