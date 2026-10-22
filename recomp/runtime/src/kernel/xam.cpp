@@ -127,6 +127,54 @@ void XamRegisterContent(const XCONTENT_DATA& data, const std::string_view& root)
     gContentRegistry[idx].emplace(StringHash(data.szFileName), XHOSTCONTENT_DATA{ data }).first->second.szRoot = root;
 }
 
+// Ips3: the registry only lives in memory, so the save packages the game creates are also listed
+// in the save folder (their XCONTENT_DATA, as stored), and registered again at the next start.
+static std::filesystem::path SavedContentListPath()
+{
+    return GetSavePath(true) / "ips3-saves.bin";
+}
+
+static void WriteSavedContentList()
+{
+    const auto path = SavedContentListPath();
+    const auto temporary = std::filesystem::path(path).concat(".new");
+    {
+        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+        for (const auto& [hash, content] : gContentRegistry[XCONTENTTYPE_SAVEDATA - 1])
+            file.write(reinterpret_cast<const char*>(static_cast<const XCONTENT_DATA*>(&content)), sizeof(XCONTENT_DATA));
+        if (!file)
+            return;
+    }
+    std::error_code ec;
+    std::filesystem::rename(temporary, path, ec);
+}
+
+void XamLoadSavedContent()
+{
+    const std::string root = (const char*)GetSavePath(true).u8string().c_str();
+    std::error_code ec;
+    if (!std::filesystem::exists(SavedContentListPath(), ec) &&
+        std::filesystem::is_regular_file(GetSavePath(true) / "data00", ec))
+    {
+        // A save written before the list existed: Bayonetta's one save package.
+        XamRegisterContent(XamMakeContent(XCONTENTTYPE_SAVEDATA, "ContinueData"), root);
+        WriteSavedContentList();
+        fmt::println(stderr, "[xam] save package ContinueData (found data00)");
+        return;
+    }
+
+    std::ifstream file(SavedContentListPath(), std::ios::binary);
+    XCONTENT_DATA content;
+    while (file.read(reinterpret_cast<char*>(&content), sizeof(content)))
+    {
+        if (content.dwContentType != XCONTENTTYPE_SAVEDATA)
+            continue;
+        content.szFileName[sizeof(content.szFileName) - 1] = 0;
+        XamRegisterContent(content, root);
+        fmt::println(stderr, "[xam] save package {}", content.szFileName);
+    }
+}
+
 void XamRegisterContent(uint32_t type, const std::string_view name, const std::string_view& root)
 {
     XCONTENT_DATA data{ 1, type, {}, "" };
@@ -349,6 +397,11 @@ static uint32_t ContentCreate(const char* szRootName, const XCONTENT_DATA* pCont
 
             const std::string root = (const char*)rootPath.u8string().c_str();
             XamRegisterContent(*pContentData, root);
+            if (pContentData->dwContentType == XCONTENTTYPE_SAVEDATA)
+            {
+                fmt::println(stderr, "[xam] new save package {}", pContentData->szFileName);
+                WriteSavedContentList();
+            }
 
             std::error_code ec;
             std::filesystem::create_directory(rootPath, ec);

@@ -7,6 +7,9 @@
 
 XCONTENT_DATA XamMakeContent(uint32_t type, const std::string_view& name);
 void XamRegisterContent(const XCONTENT_DATA& data, const std::string_view& root);
+// Ips3: registers the save packages a previous run created (listed in the save folder), so the
+// game finds its saves after a restart.
+void XamLoadSavedContent();
 
 std::string_view XamGetRootPath(const std::string_view& root);
 void XamRootCreate(const std::string_view& root, const std::string_view& path);

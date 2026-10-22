@@ -115,6 +115,9 @@ static std::vector<uint8_t> ReadExecutable(const std::filesystem::path& override
 static void MountGame()
 {
 
+    // The saves from earlier runs.
+    XamLoadSavedContent();
+
     const auto gameContent = XamMakeContent(XCONTENTTYPE_RESERVED, "Game");
     XamRegisterContent(gameContent, g_gamePath.string());
 
