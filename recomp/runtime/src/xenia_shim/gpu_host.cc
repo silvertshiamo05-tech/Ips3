@@ -21,6 +21,7 @@
 
 #include "xenia/ui/gpu_completion_timeline.h"
 #include "xenia/gpu/ips3_gpu_counters.h"
+#include "xenia/gpu/vulkan/ips3_gpu_timing.h"
 #include "xenia/base/byte_order.h"
 #include "xenia/base/cvar.h"
 #include "xenia/base/logging.h"
@@ -280,11 +281,45 @@ std::string ips3_gpu_work_report(uint64_t frames) {
     d[i] = double(now[i] - last[i]) / per;
     last[i] = now[i];
   }
-  return fmt::format(
+  std::string text = fmt::format(
       "per frame: {:.0f} draws, {:.0f} render passes ({:.0f} with MSAA, {:.1f} Mpixels), "
       "{:.0f} render target transfers, {:.0f} resolves, {:.0f} dispatches, {:.0f} copies, "
       "{:.0f} barriers, {:.1f} submissions",
       d[0], d[1], d[2], d[3] / 1e6, d[4], d[5], d[6], d[7], d[8], d[9]);
+  {
+    static uint64_t last_dumps = 0, last_skipped = 0;
+    const uint64_t dumps = c.dumps, skipped = c.dumps_skipped;
+    text += fmt::format(", {:.1f} render target dumps ({:.1f} skipped as repeats)",
+                        double(dumps - last_dumps) / per, double(skipped - last_skipped) / per);
+    last_dumps = dumps;
+    last_skipped = skipped;
+  }
+  // GPU time per frame by kind of work (timestamps; see ips3_gpu_timing.h).
+  ips3::GpuTiming& timing = ips3::GpuTiming::Get();
+  if (timing.active) {
+    static uint64_t last_ns[size_t(ips3::GpuWork::kCount)] = {};
+    static uint64_t last_lost = 0;
+    double ms[size_t(ips3::GpuWork::kCount)];
+    double total = 0;
+    for (size_t i = 0; i < size_t(ips3::GpuWork::kCount); ++i) {
+      const uint64_t now_ns = timing.ns[i];
+      ms[i] = double(now_ns - last_ns[i]) / 1e6 / per;
+      last_ns[i] = now_ns;
+      total += ms[i];
+    }
+    const uint64_t lost = timing.lost;
+    text += fmt::format(
+        "\n[gpu] GPU time per frame {:.1f} ms: render passes {:.1f}, render target dumps {:.1f}, "
+        "resolves {:.1f}, texture loads {:.1f}, other compute {:.1f}, copies {:.1f}, between {:.1f}"
+        "{}",
+        total, ms[size_t(ips3::GpuWork::kRenderPass)], ms[size_t(ips3::GpuWork::kDump)],
+        ms[size_t(ips3::GpuWork::kResolve)], ms[size_t(ips3::GpuWork::kTextureLoad)],
+        ms[size_t(ips3::GpuWork::kCompute)], ms[size_t(ips3::GpuWork::kCopy)],
+        ms[size_t(ips3::GpuWork::kOther)],
+        lost != last_lost ? fmt::format(" ({} submissions not timed)", lost - last_lost) : "");
+    last_lost = lost;
+  }
+  return text;
 }
 
 void ips3_gpu_wait_stats(uint64_t* wait_ns, uint64_t* waits) {

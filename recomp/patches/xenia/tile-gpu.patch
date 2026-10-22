@@ -1,9 +1,9 @@
 diff --git a/src/xenia/gpu/ips3_gpu_counters.h b/src/xenia/gpu/ips3_gpu_counters.h
 new file mode 100644
-index 000000000..e3ed2c430
+index 000000000..61b71d460
 --- /dev/null
 +++ b/src/xenia/gpu/ips3_gpu_counters.h
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,26 @@
 +// Ips3: counts of the GPU work Xenia records, for the status lines (what each guest frame costs
 +// the host GPU).
 +#ifndef XENIA_GPU_IPS3_GPU_COUNTERS_H_
@@ -23,6 +23,8 @@ index 000000000..e3ed2c430
 +  std::atomic<uint64_t> transfers{0};
 +  std::atomic<uint64_t> resolves{0};
 +  std::atomic<uint64_t> submissions{0};
++  std::atomic<uint64_t> dumps{0};
++  std::atomic<uint64_t> dumps_skipped{0};
 +};
 +
 +inline Ips3GpuCounters ips3_gpu_counters;
@@ -61,18 +63,39 @@ index 32f8a5c23..e7de25ead 100644
  
    struct OwnershipRange {
 diff --git a/src/xenia/gpu/vulkan/deferred_command_buffer.cc b/src/xenia/gpu/vulkan/deferred_command_buffer.cc
-index 1b0bf1bb1..79757ef5f 100644
+index 1b0bf1bb1..051d0167c 100644
 --- a/src/xenia/gpu/vulkan/deferred_command_buffer.cc
 +++ b/src/xenia/gpu/vulkan/deferred_command_buffer.cc
-@@ -7,6 +7,7 @@
+@@ -7,7 +7,9 @@
   ******************************************************************************
   */
  
 +#include "xenia/gpu/ips3_gpu_counters.h"
  #include "xenia/gpu/vulkan/deferred_command_buffer.h"
++#include "xenia/gpu/vulkan/ips3_gpu_timing.h"
  
  #include <cstring>
-@@ -95,6 +96,10 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+ 
+@@ -36,6 +38,10 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+ 
+   const ui::vulkan::VulkanDevice::Functions& dfn =
+       command_processor_.GetVulkanDevice()->functions();
++  ips3::GpuTiming& ips3_timing = ips3::GpuTiming::Get();
++  ips3::GpuWork ips3_compute_work = ips3::GpuWork::kCompute;
++  ips3_timing.BeginCommandBuffer(command_processor_.GetVulkanDevice(),
++                                 command_buffer);
+   const uintmax_t* stream = command_stream_.data();
+   size_t stream_remaining = command_stream_.size();
+   while (stream_remaining) {
+@@ -46,6 +52,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+ 
+     switch (header.command) {
+       case Command::kVkBeginRenderPass: {
++        ips3_timing.Switch(command_buffer, ips3::GpuWork::kRenderPass);
+         auto& args = *reinterpret_cast<const ArgsVkBeginRenderPass*>(stream);
+         size_t offset_bytes = sizeof(ArgsVkBeginRenderPass);
+         VkRenderPassBeginInfo render_pass_begin_info;
+@@ -95,6 +102,10 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
          }
          dfn.vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info,
                                   args.contents);
@@ -83,31 +106,63 @@ index 1b0bf1bb1..79757ef5f 100644
        } break;
  
        case Command::kVkBindDescriptorSets: {
-@@ -210,6 +215,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+@@ -128,6 +139,9 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+         auto& args = *reinterpret_cast<const ArgsVkBindPipeline*>(stream);
+         dfn.vkCmdBindPipeline(command_buffer, args.pipeline_bind_point,
+                               args.pipeline);
++        if (args.pipeline_bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
++          ips3_compute_work = ips3_timing.ComputeTag(args.pipeline);
++        }
+       } break;
+ 
+       case Command::kVkBindVertexBuffers: {
+@@ -199,6 +213,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+       } break;
+ 
+       case Command::kVkClearColorImage: {
++        ips3_timing.Switch(command_buffer, ips3::GpuWork::kCopy);
+         auto& args = *reinterpret_cast<const ArgsVkClearColorImage*>(stream);
+         dfn.vkCmdClearColorImage(
+             command_buffer, args.image, args.image_layout, &args.color,
+@@ -210,6 +225,8 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
        } break;
  
        case Command::kVkCopyBuffer: {
++        ips3_timing.Switch(command_buffer, ips3::GpuWork::kCopy);
 +        ++ips3_gpu_counters.copies;
          auto& args = *reinterpret_cast<const ArgsVkCopyBuffer*>(stream);
          dfn.vkCmdCopyBuffer(
              command_buffer, args.src_buffer, args.dst_buffer, args.region_count,
-@@ -225,6 +231,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+@@ -219,12 +236,15 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+       } break;
+ 
+       case Command::kVkFillBuffer: {
++        ips3_timing.Switch(command_buffer, ips3::GpuWork::kCopy);
+         auto& args = *reinterpret_cast<const ArgsVkFillBuffer*>(stream);
+         dfn.vkCmdFillBuffer(command_buffer, args.dst_buffer, args.dst_offset,
+                             args.size, args.data);
        } break;
  
        case Command::kVkCopyBufferToImage: {
++        ips3_timing.Switch(command_buffer, ips3::GpuWork::kCopy);
 +        ++ips3_gpu_counters.copies;
          auto& args = *reinterpret_cast<const ArgsVkCopyBufferToImage*>(stream);
          dfn.vkCmdCopyBufferToImage(
              command_buffer, args.src_buffer, args.dst_image,
-@@ -236,6 +243,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+@@ -236,6 +256,8 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
        } break;
  
        case Command::kVkBlitImage: {
++        ips3_timing.Switch(command_buffer, ips3::GpuWork::kCopy);
 +        ++ips3_gpu_counters.copies;
          auto& args = *reinterpret_cast<const ArgsVkBlitImage*>(stream);
          dfn.vkCmdBlitImage(
              command_buffer, args.src_image, args.src_image_layout,
-@@ -250,15 +258,18 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+@@ -247,18 +269,22 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+       } break;
+ 
+       case Command::kVkDispatch: {
++        ips3_timing.Switch(command_buffer, ips3_compute_work);
          auto& args = *reinterpret_cast<const ArgsVkDispatch*>(stream);
          dfn.vkCmdDispatch(command_buffer, args.group_count_x,
                            args.group_count_y, args.group_count_z);
@@ -126,7 +181,11 @@ index 1b0bf1bb1..79757ef5f 100644
          auto& args = *reinterpret_cast<const ArgsVkDrawIndexed*>(stream);
          dfn.vkCmdDrawIndexed(command_buffer, args.index_count,
                               args.instance_count, args.first_index,
-@@ -270,6 +281,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+@@ -267,9 +293,11 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+ 
+       case Command::kVkEndRenderPass:
+         dfn.vkCmdEndRenderPass(command_buffer);
++        ips3_timing.Switch(command_buffer, ips3::GpuWork::kOther);
          break;
  
        case Command::kVkPipelineBarrier: {
@@ -134,19 +193,220 @@ index 1b0bf1bb1..79757ef5f 100644
          auto& args = *reinterpret_cast<const ArgsVkPipelineBarrier*>(stream);
          size_t barrier_offset_bytes = sizeof(ArgsVkPipelineBarrier);
          const VkMemoryBarrier* memory_barriers = nullptr;
+@@ -426,6 +454,7 @@ void DeferredCommandBuffer::Execute(VkCommandBuffer command_buffer) {
+     stream += header.arguments_size_elements;
+     stream_remaining -= header.arguments_size_elements;
+   }
++  ips3_timing.EndCommandBuffer(command_buffer);
+ }
+ 
+ void DeferredCommandBuffer::CmdVkPipelineBarrier(
+diff --git a/src/xenia/gpu/vulkan/ips3_gpu_timing.h b/src/xenia/gpu/vulkan/ips3_gpu_timing.h
+new file mode 100644
+index 000000000..262d3c4a9
+--- /dev/null
++++ b/src/xenia/gpu/vulkan/ips3_gpu_timing.h
+@@ -0,0 +1,186 @@
++// Ips3: how long the host GPU spends on each kind of work Xenia records -- render passes,
++// compute dispatches (resolves, render target dumps, texture loads...), copies -- measured with
++// timestamps written whenever the kind of work changes (outside render passes only), read back
++// once the submission has finished. For the status lines; IPS3_GPU_TIMING=0 turns it off.
++#ifndef XENIA_GPU_VULKAN_IPS3_GPU_TIMING_H_
++#define XENIA_GPU_VULKAN_IPS3_GPU_TIMING_H_
++
++#include <array>
++#include <atomic>
++#include <cstdint>
++#include <cstdlib>
++#include <unordered_map>
++#include <vector>
++
++#include "xenia/ui/vulkan/vulkan_device.h"
++#include "xenia/ui/vulkan/vulkan_instance.h"
++
++namespace ips3 {
++
++enum class GpuWork : uint8_t {
++  kOther,
++  kRenderPass,
++  kCompute,      // compute not tagged below
++  kDump,         // render targets into the EDRAM buffer (before resolves)
++  kResolve,      // EDRAM into guest memory (and resolve clears, downscales)
++  kTextureLoad,  // guest memory into host textures
++  kCopy,
++  kCount
++};
++
++class GpuTiming {
++ public:
++  static GpuTiming& Get() {
++    static GpuTiming timing;
++    return timing;
++  }
++
++  // Nanoseconds of GPU time per kind of work so far, and submissions whose timestamps were not
++  // ready when their query pool was needed again.
++  std::array<std::atomic<uint64_t>, size_t(GpuWork::kCount)> ns{};
++  std::atomic<uint64_t> lost{0};
++  std::atomic<bool> active{false};
++
++  // The kind of work of the compute pipeline the next BindExternalComputePipeline binds (set by
++  // its caller), and the kinds of the pipelines bound so far. Command processor thread only.
++  GpuWork next_compute_tag = GpuWork::kCompute;
++  void TagNextComputePipeline(VkPipeline pipeline) {
++    if (next_compute_tag != GpuWork::kCompute) {
++      tags_[pipeline] = next_compute_tag;
++    }
++    next_compute_tag = GpuWork::kCompute;
++  }
++  GpuWork ComputeTag(VkPipeline pipeline) const {
++    auto it = tags_.find(pipeline);
++    return it != tags_.end() ? it->second : GpuWork::kCompute;
++  }
++
++  // Called by the command processor's thread only.
++  void BeginCommandBuffer(const xe::ui::vulkan::VulkanDevice* device, VkCommandBuffer cb) {
++    if (!Init(device)) {
++      return;
++    }
++    Pool& pool = pools_[next_pool_];
++    next_pool_ = (next_pool_ + 1) % kPools;
++    if (pool.pending) {
++      Collect(pool);
++    }
++    current_ = &pool;
++    pool.count = 0;
++    pool.pending = true;
++    dfn_->vkCmdResetQueryPool(cb, pool.pool, 0, kQueries);
++    work_ = GpuWork::kOther;
++    Write(cb, GpuWork::kOther);
++  }
++
++  // Before work of the given kind is recorded (never inside a render pass).
++  void Switch(VkCommandBuffer cb, GpuWork work) {
++    if (current_ && work != work_) {
++      Write(cb, work);
++      work_ = work;
++    }
++  }
++
++  void EndCommandBuffer(VkCommandBuffer cb) {
++    if (current_) {
++      Write(cb, GpuWork::kOther);
++      current_ = nullptr;
++    }
++  }
++
++ private:
++  static constexpr uint32_t kPools = 8;
++  static constexpr uint32_t kQueries = 1024;
++
++  struct Pool {
++    VkQueryPool pool = VK_NULL_HANDLE;
++    uint32_t count = 0;
++    bool pending = false;
++    std::array<GpuWork, kQueries> work{};
++  };
++
++  bool Init(const xe::ui::vulkan::VulkanDevice* device) {
++    if (state_ != 0) {
++      return state_ == 1;
++    }
++    state_ = 2;
++    if (const char* setting = getenv("IPS3_GPU_TIMING"); setting && setting[0] == '0') {
++      return false;
++    }
++    const auto& ifn = device->vulkan_instance()->functions();
++    uint32_t family_count = 0;
++    ifn.vkGetPhysicalDeviceQueueFamilyProperties(device->physical_device(), &family_count,
++                                                 nullptr);
++    std::vector<VkQueueFamilyProperties> families(family_count);
++    ifn.vkGetPhysicalDeviceQueueFamilyProperties(device->physical_device(), &family_count,
++                                                 families.data());
++    const uint32_t family = device->queue_family_graphics_compute();
++    if (family >= family_count || !families[family].timestampValidBits) {
++      return false;
++    }
++    const uint32_t bits = families[family].timestampValidBits;
++    mask_ = bits >= 64 ? ~uint64_t(0) : (uint64_t(1) << bits) - 1;
++    VkPhysicalDeviceProperties properties;
++    ifn.vkGetPhysicalDeviceProperties(device->physical_device(), &properties);
++    period_ = properties.limits.timestampPeriod;
++    if (period_ <= 0.0f) {
++      return false;
++    }
++    dfn_ = &device->functions();
++    device_ = device->device();
++    VkQueryPoolCreateInfo create_info = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
++    create_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
++    create_info.queryCount = kQueries;
++    for (Pool& pool : pools_) {
++      if (dfn_->vkCreateQueryPool(device_, &create_info, nullptr, &pool.pool) != VK_SUCCESS) {
++        return false;
++      }
++    }
++    state_ = 1;
++    active = true;
++    return true;
++  }
++
++  void Write(VkCommandBuffer cb, GpuWork work) {
++    if (current_->count >= kQueries) {
++      return;
++    }
++    current_->work[current_->count] = work;
++    dfn_->vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, current_->pool,
++                              current_->count);
++    ++current_->count;
++  }
++
++  void Collect(Pool& pool) {
++    pool.pending = false;
++    if (pool.count < 2) {
++      return;
++    }
++    std::array<uint64_t, kQueries> stamps;
++    if (dfn_->vkGetQueryPoolResults(device_, pool.pool, 0, pool.count,
++                                    sizeof(uint64_t) * pool.count, stamps.data(),
++                                    sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) != VK_SUCCESS) {
++      ++lost;
++      return;
++    }
++    for (uint32_t i = 1; i < pool.count; ++i) {
++      const uint64_t ticks = (stamps[i] - stamps[i - 1]) & mask_;
++      ns[size_t(pool.work[i - 1])] += uint64_t(double(ticks) * period_);
++    }
++  }
++
++  int state_ = 0;  // 0 not yet, 1 on, 2 off
++  const xe::ui::vulkan::VulkanDevice::Functions* dfn_ = nullptr;
++  VkDevice device_ = VK_NULL_HANDLE;
++  uint64_t mask_ = 0;
++  float period_ = 0.0f;
++  std::array<Pool, kPools> pools_;
++  uint32_t next_pool_ = 0;
++  Pool* current_ = nullptr;
++  GpuWork work_ = GpuWork::kOther;
++  std::unordered_map<VkPipeline, GpuWork> tags_;
++};
++
++}  // namespace ips3
++
++#endif  // XENIA_GPU_VULKAN_IPS3_GPU_TIMING_H_
 diff --git a/src/xenia/gpu/vulkan/vulkan_command_processor.cc b/src/xenia/gpu/vulkan/vulkan_command_processor.cc
-index d9761b7f9..4caa34ba5 100644
+index d9761b7f9..635bae33f 100644
 --- a/src/xenia/gpu/vulkan/vulkan_command_processor.cc
 +++ b/src/xenia/gpu/vulkan/vulkan_command_processor.cc
-@@ -7,6 +7,7 @@
+@@ -7,6 +7,8 @@
   ******************************************************************************
   */
  
 +#include "xenia/gpu/ips3_gpu_counters.h"
++#include "xenia/gpu/vulkan/ips3_gpu_timing.h"
  #include "xenia/gpu/vulkan/vulkan_command_processor.h"
  
  #include <cstdint>
-@@ -2001,8 +2002,31 @@ void VulkanCommandProcessor::SubmitBarriersAndEnterRenderTargetCacheRenderPass(
+@@ -2001,8 +2003,31 @@ void VulkanCommandProcessor::SubmitBarriersAndEnterRenderTargetCacheRenderPass(
      VkRenderPass render_pass,
      const VulkanRenderTargetCache::Framebuffer* framebuffer) {
    SubmitBarriers(false);
@@ -179,12 +439,13 @@ index d9761b7f9..4caa34ba5 100644
      return;
    }
    if (current_render_pass_ != VK_NULL_HANDLE) {
-@@ -2026,10 +2050,15 @@ void VulkanCommandProcessor::SubmitBarriersAndEnterRenderTargetCacheRenderPass(
+@@ -2026,10 +2051,16 @@ void VulkanCommandProcessor::SubmitBarriersAndEnterRenderTargetCacheRenderPass(
    // TODO(Triang3l): Actual dirty width / height in the deferred command
    // buffer.
    render_pass_begin_info.renderArea.extent = framebuffer->host_extent;
 +  render_pass_begin_info.renderArea.extent.height = ips3_area_height;
 +  ips3_current_pass_height_ = ips3_area_height;
++  render_target_cache_->Ips3NoteRenderPass();
    render_pass_begin_info.clearValueCount = 0;
    render_pass_begin_info.pClearValues = nullptr;
    // The sample locations for automatic depth layout transitions and for the
@@ -195,7 +456,15 @@ index d9761b7f9..4caa34ba5 100644
    deferred_command_buffer_.CmdVkBeginRenderPass(
        &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE,
        framebuffer->render_pass_key.depth_and_color_used
-@@ -3009,6 +3038,7 @@ bool VulkanCommandProcessor::IssueDraw(xenos::PrimitiveType prim_type,
+@@ -2352,6 +2383,7 @@ void VulkanCommandProcessor::BindExternalGraphicsPipeline(
+ }
+ 
+ void VulkanCommandProcessor::BindExternalComputePipeline(VkPipeline pipeline) {
++  ips3::GpuTiming::Get().TagNextComputePipeline(pipeline);
+   if (current_external_compute_pipeline_ == pipeline) {
+     return;
+   }
+@@ -3009,6 +3041,7 @@ bool VulkanCommandProcessor::IssueDraw(xenos::PrimitiveType prim_type,
    // drawing.
    uint32_t zpd_hybrid_index_before_render_pass =
        active_segment_.hybrid ? active_query_index_ : UINT32_MAX;
@@ -203,7 +472,7 @@ index d9761b7f9..4caa34ba5 100644
    SubmitBarriersAndEnterRenderTargetCacheRenderPass(
        render_target_cache_->last_update_render_pass(),
        render_target_cache_->last_update_framebuffer());
-@@ -3165,6 +3195,7 @@ bool VulkanCommandProcessor::IssueCopy() {
+@@ -3165,6 +3198,7 @@ bool VulkanCommandProcessor::IssueCopy() {
  #if XE_GPU_FINE_GRAINED_DRAW_SCOPES
    SCOPE_profile_cpu_f("gpu");
  #endif  // XE_GPU_FINE_GRAINED_DRAW_SCOPES
@@ -211,7 +480,15 @@ index d9761b7f9..4caa34ba5 100644
  
    if (!BeginSubmission(true)) {
      return false;
-@@ -3851,6 +3882,7 @@ CommandProcessor::QueryOpenResult VulkanCommandProcessor::OpenQuery(
+@@ -3464,6 +3498,7 @@ bool VulkanCommandProcessor::IssueCopy() {
+           VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+       SubmitBarriers(true);
+ 
++      ips3::GpuTiming::Get().next_compute_tag = ips3::GpuWork::kResolve;
+       BindExternalComputePipeline(resolve_downscale_pipeline_);
+       ResolveDownscaleConstants downscale_constants;
+       downscale_constants.scale_x = texture_cache_->draw_resolution_scale_x();
+@@ -3851,6 +3886,7 @@ CommandProcessor::QueryOpenResult VulkanCommandProcessor::OpenQuery(
  
        if (saved_framebuffer) {
          // The pass entry won't try to open a segment while this is opening.
@@ -219,7 +496,7 @@ index d9761b7f9..4caa34ba5 100644
          SubmitBarriersAndEnterRenderTargetCacheRenderPass(saved_render_pass,
                                                            saved_framebuffer);
          if (current_render_pass_ == VK_NULL_HANDLE) {
-@@ -3898,6 +3930,7 @@ CommandProcessor::QueryOpenResult VulkanCommandProcessor::OpenQuery(
+@@ -3898,6 +3934,7 @@ CommandProcessor::QueryOpenResult VulkanCommandProcessor::OpenQuery(
          EndRenderPass();
          host_query_pool_->ClearCounter(deferred_command_buffer_,
                                         active_query_index_);
@@ -227,7 +504,7 @@ index d9761b7f9..4caa34ba5 100644
          SubmitBarriersAndEnterRenderTargetCacheRenderPass(saved_render_pass,
                                                            saved_framebuffer);
        } else {
-@@ -4503,6 +4536,9 @@ bool VulkanCommandProcessor::BeginSubmission(bool is_guest_command) {
+@@ -4503,6 +4540,9 @@ bool VulkanCommandProcessor::BeginSubmission(bool is_guest_command) {
  }
  
  bool VulkanCommandProcessor::EndSubmission(bool is_swap) {
@@ -263,18 +540,54 @@ index dc63a3ce1..a8b3b7a38 100644
    // Currently bound graphics pipeline, either from the pipeline cache (with
    // potentially deferred creation - current_external_graphics_pipeline_ is
 diff --git a/src/xenia/gpu/vulkan/vulkan_render_target_cache.cc b/src/xenia/gpu/vulkan/vulkan_render_target_cache.cc
-index 581a34445..cb4f2ebb9 100644
+index 581a34445..fa1b670d1 100644
 --- a/src/xenia/gpu/vulkan/vulkan_render_target_cache.cc
 +++ b/src/xenia/gpu/vulkan/vulkan_render_target_cache.cc
-@@ -7,6 +7,7 @@
+@@ -7,6 +7,8 @@
   ******************************************************************************
   */
  
 +#include "xenia/gpu/ips3_gpu_counters.h"
++#include "xenia/gpu/vulkan/ips3_gpu_timing.h"
  #include "xenia/gpu/vulkan/vulkan_render_target_cache.h"
  
  #include <cstddef>
-@@ -4719,6 +4720,11 @@ void VulkanRenderTargetCache::PerformTransfersAndResolveClears(
+@@ -1396,6 +1398,7 @@ bool VulkanRenderTargetCache::Resolve(
+           VkPipelineLayout copy_pipeline_layout =
+               copy_native ? resolve_copy_native_pipeline_layout_
+                           : resolve_copy_pipeline_layout_;
++          ips3::GpuTiming::Get().next_compute_tag = ips3::GpuWork::kResolve;
+           command_processor_.BindExternalComputePipeline(
+               copy_native ? resolve_copy_native_pipelines_[size_t(copy_shader)]
+                           : resolve_copy_pipelines_[size_t(copy_shader)]);
+@@ -1516,6 +1519,7 @@ bool VulkanRenderTargetCache::Resolve(
+                                                   draw_resolution_scale_y());
+         assert_true(clear_group_count.first && clear_group_count.second);
+         if (clear_depth) {
++          ips3::GpuTiming::Get().next_compute_tag = ips3::GpuWork::kResolve;
+           command_processor_.BindExternalComputePipeline(
+               resolve_fsi_clear_32bpp_pipeline_);
+           draw_util::ResolveClearShaderConstants depth_clear_constants;
+@@ -1528,6 +1532,7 @@ bool VulkanRenderTargetCache::Resolve(
+                                        clear_group_count.second, 1);
+         }
+         if (clear_color) {
++          ips3::GpuTiming::Get().next_compute_tag = ips3::GpuWork::kResolve;
+           command_processor_.BindExternalComputePipeline(
+               resolve_info.color_edram_info.format_is_64bpp
+                   ? resolve_fsi_clear_64bpp_pipeline_
+@@ -2237,6 +2242,10 @@ void VulkanRenderTargetCache::GetEdramBufferUsageMasks(
+ }
+ 
+ void VulkanRenderTargetCache::UseEdramBuffer(EdramBufferUsage new_usage) {
++  if (new_usage == EdramBufferUsage::kComputeWrite ||
++      new_usage == EdramBufferUsage::kFragmentReadWrite) {
++    ++ips3_edram_generation_;
++  }
+   if (edram_buffer_usage_ == new_usage) {
+     return;
+   }
+@@ -4719,6 +4728,11 @@ void VulkanRenderTargetCache::PerformTransfersAndResolveClears(
      const uint64_t* render_target_resolve_clear_values,
      const Transfer::Rectangle* resolve_clear_rectangle) {
    assert_true(GetPath() == Path::kHostRenderTargets);
@@ -286,7 +599,7 @@ index 581a34445..cb4f2ebb9 100644
  
    const ui::vulkan::VulkanDevice* const vulkan_device =
        command_processor_.GetVulkanDevice();
-@@ -5133,6 +5139,8 @@ void VulkanRenderTargetCache::PerformTransfersAndResolveClears(
+@@ -5133,6 +5147,8 @@ void VulkanRenderTargetCache::PerformTransfersAndResolveClears(
  
        // Perform the transfers for the render target.
  
@@ -295,8 +608,54 @@ index 581a34445..cb4f2ebb9 100644
        command_processor_.SubmitBarriersAndEnterRenderTargetCacheRenderPass(
            transfer_render_pass, transfer_framebuffer);
  
+@@ -6231,11 +6247,27 @@ void VulkanRenderTargetCache::DumpRenderTargets(uint32_t dump_base,
+                                                 bool native_layout) {
+   assert_true(GetPath() == Path::kHostRenderTargets);
+ 
++  // Ips3: the EDRAM buffer still holds exactly this dump (see ips3_edram_generation_).
++  static const bool ips3_always_dump = [] {
++    const char* always = getenv("IPS3_ALWAYS_DUMP");
++    return always && always[0] == '1';
++  }();
++  const uint32_t ips3_dump[5] = {dump_base, dump_row_length_used, dump_rows,
++                                 dump_pitch, uint32_t(native_layout)};
++  if (!ips3_always_dump &&
++      ips3_last_dump_generation_ == ips3_edram_generation_ &&
++      std::equal(std::begin(ips3_dump), std::end(ips3_dump),
++                 std::begin(ips3_last_dump_))) {
++    ++ips3_gpu_counters.dumps_skipped;
++    return;
++  }
++
+   GetResolveCopyRectanglesToDump(dump_base, dump_row_length_used, dump_rows,
+                                  dump_pitch, dump_rectangles_);
+   if (dump_rectangles_.empty()) {
+     return;
+   }
++  ++ips3_gpu_counters.dumps;
+ 
+   // Clear previously set temporary indices.
+   for (const ResolveCopyDumpRectangle& rectangle : dump_rectangles_) {
+@@ -6295,6 +6327,7 @@ void VulkanRenderTargetCache::DumpRenderTargets(uint32_t dump_base,
+     if (!pipeline) {
+       continue;
+     }
++    ips3::GpuTiming::Get().next_compute_tag = ips3::GpuWork::kDump;
+     command_processor_.BindExternalComputePipeline(pipeline);
+ 
+     VkPipelineLayout pipeline_layout = rt_key.is_depth
+@@ -6372,6 +6405,9 @@ void VulkanRenderTargetCache::DumpRenderTargets(uint32_t dump_base,
+     }
+     MarkEdramBufferModified();
+   }
++  // Ips3: what the EDRAM buffer now holds.
++  std::copy(std::begin(ips3_dump), std::end(ips3_dump), std::begin(ips3_last_dump_));
++  ips3_last_dump_generation_ = ips3_edram_generation_;
+ }
+ 
+ }  // namespace vulkan
 diff --git a/src/xenia/gpu/vulkan/vulkan_render_target_cache.h b/src/xenia/gpu/vulkan/vulkan_render_target_cache.h
-index 7436f8c5f..6478b0d8d 100644
+index 7436f8c5f..6d86d5568 100644
 --- a/src/xenia/gpu/vulkan/vulkan_render_target_cache.h
 +++ b/src/xenia/gpu/vulkan/vulkan_render_target_cache.h
 @@ -90,6 +90,8 @@ class VulkanRenderTargetCache final : public RenderTargetCache {
@@ -308,3 +667,62 @@ index 7436f8c5f..6478b0d8d 100644
      Framebuffer() = default;
      Framebuffer(VkFramebuffer framebuffer, const VkExtent2D& host_extent,
                  RenderPassKey render_pass_key)
+@@ -284,6 +286,18 @@ class VulkanRenderTargetCache final : public RenderTargetCache {
+   static void GetEdramBufferUsageMasks(EdramBufferUsage usage,
+                                        VkPipelineStageFlags& stage_mask_out,
+                                        VkAccessFlags& access_mask_out);
++  // Ips3: dumping render targets into the EDRAM buffer before a resolve is skipped when the
++  // previous dump had the same range and nothing has written to the EDRAM buffer or begun a
++  // render pass since (a game often resolves the same data more than once). The generation
++  // counts those writes; the command processor bumps it when it begins a render pass.
++ public:
++  void Ips3NoteRenderPass() { ++ips3_edram_generation_; }
++
++ private:
++  uint64_t ips3_edram_generation_ = 1;
++  uint64_t ips3_last_dump_generation_ = 0;
++  uint32_t ips3_last_dump_[5] = {};
++
+   void UseEdramBuffer(EdramBufferUsage new_usage);
+   void MarkEdramBufferModified(
+       EdramBufferModificationStatus modification_status =
+diff --git a/src/xenia/gpu/vulkan/vulkan_texture_cache.cc b/src/xenia/gpu/vulkan/vulkan_texture_cache.cc
+index c674fdaba..55a66d426 100644
+--- a/src/xenia/gpu/vulkan/vulkan_texture_cache.cc
++++ b/src/xenia/gpu/vulkan/vulkan_texture_cache.cc
+@@ -7,6 +7,7 @@
+  ******************************************************************************
+  */
+ 
++#include "xenia/gpu/vulkan/ips3_gpu_timing.h"
+ #include "xenia/gpu/vulkan/vulkan_texture_cache.h"
+ 
+ #include <algorithm>
+@@ -1564,6 +1565,7 @@ bool VulkanTextureCache::LoadTextureDataFromResidentMemoryImpl(Texture& texture,
+   DeferredCommandBuffer& command_buffer =
+       command_processor_.deferred_command_buffer();
+ 
++  ips3::GpuTiming::Get().next_compute_tag = ips3::GpuWork::kTextureLoad;
+   command_processor_.BindExternalComputePipeline(pipeline);
+ 
+   command_buffer.CmdVkBindDescriptorSets(
+diff --git a/src/xenia/ui/vulkan/functions/device_1_0.inc b/src/xenia/ui/vulkan/functions/device_1_0.inc
+index c7bb031e9..7b3c78e21 100644
+--- a/src/xenia/ui/vulkan/functions/device_1_0.inc
++++ b/src/xenia/ui/vulkan/functions/device_1_0.inc
+@@ -27,6 +27,7 @@ XE_UI_VULKAN_FUNCTION(vkCmdFillBuffer)
+ XE_UI_VULKAN_FUNCTION(vkCmdPipelineBarrier)
+ XE_UI_VULKAN_FUNCTION(vkCmdPushConstants)
+ XE_UI_VULKAN_FUNCTION(vkCmdResetQueryPool)
++XE_UI_VULKAN_FUNCTION(vkCmdWriteTimestamp)
+ XE_UI_VULKAN_FUNCTION(vkCmdSetBlendConstants)
+ XE_UI_VULKAN_FUNCTION(vkCmdSetDepthBias)
+ XE_UI_VULKAN_FUNCTION(vkCmdSetScissor)
+@@ -75,6 +76,7 @@ XE_UI_VULKAN_FUNCTION(vkFreeMemory)
+ XE_UI_VULKAN_FUNCTION(vkGetBufferMemoryRequirements)
+ XE_UI_VULKAN_FUNCTION(vkGetDeviceQueue)
+ XE_UI_VULKAN_FUNCTION(vkGetFenceStatus)
++XE_UI_VULKAN_FUNCTION(vkGetQueryPoolResults)
+ XE_UI_VULKAN_FUNCTION(vkGetImageMemoryRequirements)
+ XE_UI_VULKAN_FUNCTION(vkGetPipelineCacheData)
+ XE_UI_VULKAN_FUNCTION(vkInvalidateMappedMemoryRanges)
